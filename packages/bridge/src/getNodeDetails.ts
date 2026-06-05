@@ -47,8 +47,8 @@ export function getNodeDetails(input: GetNodeDetailsInput): GetNodeDetailsResult
     };
   }
 
-  const envelope = readEnvelope({ reference: node.primaryReference, maxArtifactBytes: input.maxArtifactBytes });
-  const validation = validateArtifact({ reference: node.primaryReference, maxArtifactBytes: input.maxArtifactBytes });
+  const envelope = readEnvelope({ reference: node.primaryReference, maxArtifactBytes: input.maxArtifactBytes, sourceAccess: input.sourceAccess });
+  const validation = validateArtifact({ reference: node.primaryReference, maxArtifactBytes: input.maxArtifactBytes, sourceAccess: input.sourceAccess });
   const complete = envelope.complete && validation.complete;
   return {
     ...createOutputMetadata("getNodeDetails"),

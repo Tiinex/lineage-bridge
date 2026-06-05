@@ -58,8 +58,8 @@ export function getStructureIndex(input: GetStructureIndexInput): GetStructureIn
   const compatibilityNotes = new Set<string>();
 
   for (const reference of input.references.slice(0, maxArtifacts)) {
-    const resolved = resolveArtifact({ reference, maxArtifactBytes: input.maxArtifactBytes, includeRawContent: true });
-    const validation = validateArtifact({ reference, maxArtifactBytes: input.maxArtifactBytes });
+    const resolved = resolveArtifact({ reference, maxArtifactBytes: input.maxArtifactBytes, includeRawContent: true, sourceAccess: input.sourceAccess });
+    const validation = validateArtifact({ reference, maxArtifactBytes: input.maxArtifactBytes, sourceAccess: input.sourceAccess });
     rawReadNeededForNextStep = rawReadNeededForNextStep || validation.rawReadNeededForNextStep;
     truncated = truncated || resolved.budgets.truncated || validation.budgets.truncated;
     const envelope = resolved.source.rawContent && !resolved.budgets.truncated

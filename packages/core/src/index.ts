@@ -99,6 +99,7 @@ export interface ResolvedArtifactSource {
   sourceStrategy: SourceStrategy;
   trustLevel: SourceTrustLevel;
   refKind: SourceRefKind;
+  workspacePolicyEnforced: boolean;
   originKind: "github-blob" | "github-raw" | "local-file" | "unsupported";
   inputReference: string;
   normalizedReference?: string;
@@ -567,6 +568,7 @@ export interface GetStructureIndexInput {
   references: string[];
   maxArtifactBytes?: number;
   maxArtifacts?: number;
+  sourceAccess?: SourceAccessOptions;
 }
 
 export interface GetTreeProjectionInput extends GetStructureIndexInput {

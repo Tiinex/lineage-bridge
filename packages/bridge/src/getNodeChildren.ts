@@ -6,6 +6,7 @@ export function getNodeChildren(input: GetNodeChildrenInput): GetNodeChildrenRes
     references: input.references,
     maxArtifactBytes: input.maxArtifactBytes,
     maxArtifacts: input.maxArtifacts,
+    sourceAccess: input.sourceAccess,
     sortBy: input.sortBy
   });
   const allNodes = projection.nodes;

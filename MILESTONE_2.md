@@ -46,6 +46,7 @@ Stop for review after M2 Leaf 1 before moving into actual remote fetch behavior.
 Current progress:
 
 * [x] M2 Leaf 1 completed: source strategy metadata, remote fetch abstraction shape, workspace root config shape, timeout/retry/budget input shapes, and output compatibility are now represented in shared core and current source outputs without starting real remote fetch behavior.
+* [x] M2 Leaf 1.1 completed: async source-boundary is now locked through a separate `resolveArtifactAsync` entrypoint, `sourceAccess` now propagates through structure/tree/details/children surfaces, and current source output explicitly reports that workspace policy is not yet enforced.
 
 ---
 

@@ -258,7 +258,10 @@ function asSupportedSchemaId(schemaId: string | undefined): SupportedSchemaId | 
 export function validateArtifact(input: ValidateArtifactInput): ValidateArtifactResult {
   const resolved = resolveArtifact({ ...input, includeRawContent: true });
   const source = stripRawContentFromSource(resolved.source);
-  const compatibilityNotes = ["initial validator coverage: continuity envelope plus minimal body-shape rules only"];
+  const compatibilityNotes = [
+    ...(resolved.compatibilityNotes ?? []),
+    "initial validator coverage: continuity envelope plus minimal body-shape rules only"
+  ];
   if (resolved.budgets.truncated) {
     return {
       ...createOutputMetadata("validateArtifact"),

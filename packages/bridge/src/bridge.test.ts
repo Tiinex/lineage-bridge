@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { getAvailableActions, getHandoffPacket, getLineage, getNodeChildren, getNodeDetails, getRelevantSlice, getSchemaContract, getStructureIndex, getTreeProjection, getValidationOverlay, parseContinuityEnvelope, readEnvelope, resolveArtifact, validateArtifact } from "./index";
+import { getAvailableActions, getHandoffPacket, getLineage, getNodeChildren, getNodeDetails, getRelevantSlice, getSchemaContract, getStructureIndex, getTreeProjection, getValidationOverlay, parseContinuityEnvelope, readEnvelope, resolveArtifact, resolveArtifactAsync, validateArtifact } from "./index";
 import { parseContractSection } from "@tiinex/lineage-bridge-parsers";
 import { classifyAliasFamilies, getAliasFamilyKey } from "./aliasFamilies";
 
@@ -12,6 +12,7 @@ test("resolveArtifact reads a local Tiinex artifact", () => {
   assert.equal(result.source.sourceStrategy, "local-workspace");
   assert.equal(result.source.trustLevel, "workspace-local");
   assert.equal(result.source.refKind, "not-applicable");
+  assert.equal(result.source.workspacePolicyEnforced, false);
   assert.equal(result.source.accessStatus, "readable");
   assert.equal(result.source.rawContentAvailability, "available");
   assert.equal(result.source.rawContent, undefined);
@@ -59,6 +60,7 @@ test("resolveArtifact accepts the M2 source contract upgrade inputs without chan
   });
   assert.equal(result.status, "ok");
   assert.equal(result.source.sourceStrategy, "local-workspace");
+  assert.equal(result.source.workspacePolicyEnforced, false);
   assert.ok(result.compatibilityNotes?.includes("Workspace access policy shape is accepted but is not enforced until the local sandbox phase."));
   assert.ok(result.compatibilityNotes?.includes("Remote GitHub fetch contract is declared but current resolution still uses the existing local mirror path."));
   assert.ok(result.compatibilityNotes?.includes("Remote network budget shapes are accepted for future source strategies but are not enforced by the current local scaffold."));
@@ -77,6 +79,7 @@ test("resolveArtifact collapses equivalent GitHub blob and raw references onto t
   assert.equal(blobResult.source.sourceStrategy, "github-local-mirror");
   assert.equal(blobResult.source.trustLevel, "local-mirror");
   assert.equal(blobResult.source.refKind, "commit");
+  assert.equal(blobResult.source.workspacePolicyEnforced, false);
   assert.equal(blobResult.artifact.canonicalArtifactId, rawResult.artifact.canonicalArtifactId);
   assert.equal(blobResult.artifact.cacheIdentity.cacheable, true);
   assert.equal(blobResult.artifact.cacheIdentity.cacheScope, "immutable-origin");
@@ -90,11 +93,27 @@ test("resolveArtifact collapses equivalent GitHub blob and raw references onto t
 test("resolveArtifact marks unsupported references as not cache-safe", () => {
   const result = resolveArtifact({ reference: "https://example.com/not-supported.trace.md" });
   assert.equal(result.status, "unsupported");
+  assert.equal(result.source.workspacePolicyEnforced, false);
   assert.deepEqual(result.artifact.cacheIdentity, {
     cacheable: false,
     cacheScope: "none",
     reason: "No stable cache identity can be derived from this artifact reference."
   });
+});
+
+test("resolveArtifactAsync preserves the current sync contract while locking the async boundary for later remote fetch", async () => {
+  const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "kickstarter", "001.trace.md");
+  const result = await resolveArtifactAsync({
+    reference,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      freshOriginResolution: true,
+      network: { requestTimeoutMs: 1000 }
+    }
+  });
+  assert.equal(result.status, "ok");
+  assert.equal(result.source.sourceStrategy, "local-workspace");
+  assert.ok(result.compatibilityNotes?.includes("Remote GitHub fetch contract is declared but current resolution still uses the existing local mirror path."));
 });
 
 test("classifyAliasFamilies marks divergent node ids in one alias family as conflict", () => {
@@ -404,6 +423,41 @@ test("getStructureIndex returns a bounded deduped index with parent and validati
   assert.equal(taskNode?.validationSummary.schemaResolutionComplete, true);
   assert.equal(taskNode?.parentEdge?.traceTarget, "001.trace.md");
   assert.ok(Array.isArray(taskNode?.originCandidates));
+});
+
+test("sourceAccess propagates through structure and node projection surfaces", () => {
+  const artifactA = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "memes", "work", "remote", "001-1-echo-cloud-handoff.trace.md");
+  const artifactB = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "memes", "work", "remote", "001.trace.md");
+  const sourceAccess = {
+    workspace: {
+      roots: [path.resolve(__dirname, "..", "..", "..", "..", "docs")],
+      symlinkPolicy: "within-workspace" as const
+    },
+    preferredGitHubStrategy: "remote" as const,
+    freshOriginResolution: true,
+    network: {
+      requestTimeoutMs: 1500,
+      totalTimeoutMs: 5000
+    }
+  };
+
+  const index = getStructureIndex({ references: [artifactA, artifactB], sourceAccess });
+  assert.ok(index.compatibilityNotes?.includes("Workspace access policy shape is accepted but is not enforced until the local sandbox phase."));
+
+  const tree = getTreeProjection({ references: [artifactA, artifactB], sourceAccess });
+  assert.ok(tree.compatibilityNotes?.includes("Workspace access policy shape is accepted but is not enforced until the local sandbox phase."));
+
+  const taskNode = tree.nodes.find((node) => node.schemaId === "tiinex.task.v1");
+  const topicNode = tree.nodes.find((node) => node.schemaId === "tiinex.topic.v1");
+  assert.ok(taskNode);
+  assert.ok(topicNode);
+
+  const details = getNodeDetails({ references: [artifactA, artifactB], nodeId: taskNode!.nodeId, sourceAccess });
+  assert.equal(details.validationBasis?.artifactOriginReference, artifactA);
+
+  const children = getNodeChildren({ references: [artifactA, artifactB], nodeId: topicNode!.nodeId, sourceAccess });
+  assert.equal(children.status, "incomplete");
+  assert.equal(children.totalChildren, 1);
 });
 
 test("getStructureIndex collapses equivalent GitHub blob and raw references when identity evidence matches", () => {

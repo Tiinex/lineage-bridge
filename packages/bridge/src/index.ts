@@ -11,7 +11,7 @@ import { readEnvelope } from "./readEnvelope";
 import { getNodeDetails } from "./getNodeDetails";
 import { getNodeChildren } from "./getNodeChildren";
 
-export { resolveArtifact } from "@tiinex/lineage-bridge-sources";
+export { resolveArtifact, resolveArtifactAsync } from "@tiinex/lineage-bridge-sources";
 export { parseContinuityEnvelope } from "@tiinex/lineage-bridge-parsers";
 export { validateArtifact } from "@tiinex/lineage-bridge-validators";
 export { readEnvelope } from "./readEnvelope";

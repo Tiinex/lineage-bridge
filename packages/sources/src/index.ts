@@ -89,6 +89,7 @@ function okSource(partial: Partial<ResolvedArtifactSource>): ResolvedArtifactSou
     sourceStrategy: partial.sourceStrategy ?? "unsupported",
     trustLevel: partial.trustLevel ?? "unknown",
     refKind: partial.refKind ?? "unknown",
+    workspacePolicyEnforced: partial.workspacePolicyEnforced ?? false,
     originKind: partial.originKind ?? "unsupported",
     inputReference: partial.inputReference ?? "",
     normalizedReference: partial.normalizedReference,
@@ -141,6 +142,7 @@ function resolveLocalFile(input: ResolveArtifactInput, maxArtifactBytes: number)
       sourceStrategy: "local-workspace",
       trustLevel: "workspace-local",
       refKind: "not-applicable",
+      workspacePolicyEnforced: false,
       originKind: "local-file",
       inputReference: reference,
       normalizedReference: normalizedPath,
@@ -184,6 +186,7 @@ function resolveLocalFile(input: ResolveArtifactInput, maxArtifactBytes: number)
       sourceStrategy: "local-workspace",
       trustLevel: "workspace-local",
       refKind: "not-applicable",
+      workspacePolicyEnforced: false,
       originKind: "local-file",
       inputReference: reference,
       normalizedReference: normalizedPath,
@@ -241,6 +244,7 @@ function resolveGitHubReference(input: ResolveArtifactInput, maxArtifactBytes: n
       sourceStrategy: "github-local-mirror",
       trustLevel: "local-mirror",
       refKind: "commit",
+      workspacePolicyEnforced: false,
       originKind: blobMatch ? "github-blob" : "github-raw",
       inputReference: reference,
       normalizedReference,
@@ -281,6 +285,7 @@ function resolveGitHubReference(input: ResolveArtifactInput, maxArtifactBytes: n
       sourceStrategy: "github-local-mirror",
       trustLevel: "local-mirror",
       refKind: "commit",
+      workspacePolicyEnforced: false,
       originKind: blobMatch ? "github-blob" : "github-raw",
       inputReference: reference,
       normalizedReference,
@@ -326,6 +331,7 @@ export function resolveArtifact(input: ResolveArtifactInput): ResolveArtifactRes
         sourceStrategy: "unsupported",
         trustLevel: "unknown",
         refKind: "unknown",
+        workspacePolicyEnforced: false,
         originKind: "unsupported",
         inputReference: input.reference,
         accessStatus: "unsupported-origin",
@@ -342,4 +348,8 @@ export function resolveArtifact(input: ResolveArtifactInput): ResolveArtifactRes
     };
   }
   return resolveLocalFile(input, maxArtifactBytes);
+}
+
+export async function resolveArtifactAsync(input: ResolveArtifactInput): Promise<ResolveArtifactResult> {
+  return resolveArtifact(input);
 }
