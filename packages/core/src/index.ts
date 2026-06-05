@@ -231,6 +231,7 @@ export interface HandoffPacketBody {
   artifact: HandoffPacketArtifactSummary;
   validation: {
     status: BridgeTopLevelStatus;
+    rawValidatorStatus: BridgeTopLevelStatus;
     basis: ValidationBasis;
     findings: ValidationFinding[];
   };

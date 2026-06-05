@@ -8,6 +8,16 @@ import { getLineage } from "./getLineage";
 import { validateArtifact } from "@tiinex/lineage-bridge-validators";
 import { selectRelevantSlices } from "./selectRelevantSlices";
 
+function deriveConsumerFacingValidationStatus(validation: ReturnType<typeof validateArtifact>): GetHandoffPacketResult["handoff"]["validation"]["status"] {
+  if (validation.status !== "ok") {
+    return validation.status;
+  }
+  if (validation.validationBasis.partialValidation || !validation.validationBasis.schemaResolutionComplete) {
+    return "incomplete";
+  }
+  return "ok";
+}
+
 function deriveNextAction(input: {
   validationStatus: GetHandoffPacketResult["handoff"]["validation"]["status"];
   lineageStoppedBecause: ReturnType<typeof getLineage>["stoppedBecause"];
@@ -49,8 +59,9 @@ export function getHandoffPacket(input: GetHandoffPacketInput): GetHandoffPacket
   const envelope = validation.source.rawContent ? parseContinuityEnvelope(validation.source.rawContent) : undefined;
   const parentNode = lineage.nodes[1];
   const importantFindings = validation.findings.filter((finding) => finding.severity !== "info");
+  const consumerFacingValidationStatus = deriveConsumerFacingValidationStatus(validation);
   const nextAction = deriveNextAction({
-    validationStatus: validation.status,
+    validationStatus: consumerFacingValidationStatus,
     lineageStoppedBecause: lineage.stoppedBecause,
     originRecoveryCandidates: lineage.originRecoveryCandidates
   });
@@ -67,7 +78,7 @@ export function getHandoffPacket(input: GetHandoffPacketInput): GetHandoffPacket
     lineageStoppedBecause: lineage.stoppedBecause
   });
   const complete = validation.complete && lineage.complete;
-  const status = validation.status === "invalid"
+  const status = consumerFacingValidationStatus === "invalid"
     ? "invalid"
     : complete
       ? "ok"
@@ -89,7 +100,8 @@ export function getHandoffPacket(input: GetHandoffPacketInput): GetHandoffPacket
         aliases: validation.artifact.aliases
       },
       validation: {
-        status: validation.status,
+        status: consumerFacingValidationStatus,
+        rawValidatorStatus: validation.status,
         basis: validation.validationBasis,
         findings: importantFindings
       },

@@ -97,6 +97,21 @@ test("validateArtifact returns ok for a known task artifact", () => {
   assert.equal(result.status, "ok");
   assert.equal(result.governingSchemaId, "tiinex.task.v1");
   assert.equal(result.validationBasis.partialValidation, true);
+  assert.ok(result.compatibilityNotes?.includes("initial validator coverage: continuity envelope plus minimal body-shape rules only"));
+});
+
+test("validateArtifact returns invalid when a topic artifact has no readable topic-state section", () => {
+  const reference = path.resolve(__dirname, "..", "src", "fixtures", "invalid-topic-no-state-section.trace.md");
+  const result = validateArtifact({ reference });
+  assert.equal(result.status, "invalid");
+  assert.ok(result.findings.some((finding) => finding.code === "tiinex.topic.v1-body-orientation-missing"));
+});
+
+test("validateArtifact returns invalid when a task artifact has no readable completion signal", () => {
+  const reference = path.resolve(__dirname, "..", "src", "fixtures", "invalid-task-missing-completion.trace.md");
+  const result = validateArtifact({ reference });
+  assert.equal(result.status, "invalid");
+  assert.ok(result.findings.some((finding) => finding.code === "tiinex.task.v1-completion-signal-missing"));
 });
 
 test("getLineage returns a bounded parent chain without conflating parent and origin", () => {
@@ -127,6 +142,8 @@ test("getHandoffPacket returns a compact packet for a fresh chat", () => {
   assert.equal(result.handoff.handoffShapeVersion, 1);
   assert.equal(result.handoff.artifact.schema, "tiinex.task.v1");
   assert.equal(result.handoff.validation.basis.governingSchemaId, "tiinex.task.v1");
+  assert.equal(result.handoff.validation.status, "incomplete");
+  assert.equal(result.handoff.validation.rawValidatorStatus, "ok");
   assert.equal(result.handoff.continuity.parent?.traceTarget, "001.trace.md");
   assert.ok(result.handoff.relevantSlices.some((slice) => slice.label === "current-summary"));
   assert.ok(result.handoff.doNotTraverse.length > 0);
@@ -175,7 +192,7 @@ test("getValidationOverlay returns a UI-neutral validation summary", () => {
   assert.equal(result.partialValidation, true);
   assert.equal(result.exactValidationBlocked, false);
   assert.equal(result.schemaResolutionComplete, true);
-  assert.ok(result.compatibilityNotes?.includes("initial validator coverage: continuity envelope only"));
+  assert.ok(result.compatibilityNotes?.includes("initial validator coverage: continuity envelope plus minimal body-shape rules only"));
 });
 
 test("getAvailableActions returns transport-neutral actions from core policy", () => {

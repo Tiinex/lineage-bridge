@@ -18,6 +18,12 @@ interface ValidatorSpec {
   expectedEnvelopeSchema: "tiinex.root.v1";
 }
 
+interface ParsedBodyShape {
+  firstHeading?: { level: number; text: string };
+  headings: string[];
+  proseParagraphs: string[];
+}
+
 const VALIDATORS: Record<SupportedSchemaId, ValidatorSpec> = {
   "tiinex.root.v1": {
     validatorId: "@tiinex/lineage-bridge-validators/root-envelope-v1",
@@ -50,6 +56,66 @@ function getSchemaId(reference: ContinuityEnvelope["currentSchema"] | Continuity
   return reference?.label ?? reference?.target;
 }
 
+function parseBodyShape(markdown: string): ParsedBodyShape {
+  const lines = markdown.replace(/\r\n?/gu, "\n").split("\n");
+  const bodyLines: string[] = [];
+  let inBody = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === "# Continuity Context") {
+      inBody = false;
+      continue;
+    }
+    if (trimmed === "# Continuity Integrity") {
+      break;
+    }
+    if (trimmed === "---") {
+      inBody = !inBody;
+      continue;
+    }
+    if (inBody) {
+      bodyLines.push(line);
+    }
+  }
+
+  const headings: string[] = [];
+  const proseParagraphs: string[] = [];
+  let firstHeading: ParsedBodyShape["firstHeading"];
+  let currentParagraph: string[] = [];
+
+  function flushParagraph(): void {
+    if (currentParagraph.length === 0) {
+      return;
+    }
+    proseParagraphs.push(currentParagraph.join(" ").trim());
+    currentParagraph = [];
+  }
+
+  for (const line of bodyLines) {
+    const trimmed = line.trim();
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/u);
+    if (!trimmed) {
+      flushParagraph();
+      continue;
+    }
+    if (headingMatch) {
+      flushParagraph();
+      const heading = { level: headingMatch[1].length, text: headingMatch[2].trim() };
+      firstHeading ??= heading;
+      headings.push(heading.text);
+      continue;
+    }
+    if (/^[-*]\s+/u.test(trimmed)) {
+      flushParagraph();
+      continue;
+    }
+    currentParagraph.push(trimmed);
+  }
+  flushParagraph();
+
+  return { firstHeading, headings, proseParagraphs };
+}
+
 function validateEnvelopeCommon(envelope: ContinuityEnvelope): ValidationFinding[] {
   const findings: ValidationFinding[] = [];
   if (!envelope.currentCreatedAt) {
@@ -59,6 +125,24 @@ function validateEnvelopeCommon(envelope: ContinuityEnvelope): ValidationFinding
       message: "Current Created At is required by the continuity envelope.",
       targetSurface: "envelope",
       ruleSource: "Milestone 1 / ReadEnvelope"
+    }));
+  }
+  if (!envelope.integrity?.method) {
+    findings.push(createFinding({
+      code: "continuity-integrity-method-missing",
+      severity: "error",
+      message: "Continuity Integrity must declare a method.",
+      targetSurface: "integrity",
+      ruleSource: "Milestone 1 / Root Integrity"
+    }));
+  }
+  if (!envelope.integrity?.value) {
+    findings.push(createFinding({
+      code: "continuity-integrity-value-missing",
+      severity: "error",
+      message: "Continuity Integrity must declare a value.",
+      targetSurface: "integrity",
+      ruleSource: "Milestone 1 / Root Integrity"
     }));
   }
   return findings;
@@ -89,6 +173,80 @@ function validateSchemaShape(envelope: ContinuityEnvelope, spec: ValidatorSpec):
   return findings;
 }
 
+function validateBodyCommon(rawContent: string, schemaId: SupportedSchemaId, validatorId: string): ValidationFinding[] {
+  const body = parseBodyShape(rawContent);
+  const findings: ValidationFinding[] = [];
+  if (!body.firstHeading || body.firstHeading.level !== 1) {
+    findings.push(createFinding({
+      code: `${schemaId}-body-heading-missing`,
+      severity: "error",
+      message: "Artifact body must begin with a first-level human-readable heading after the continuity envelope.",
+      targetSurface: "artifact",
+      ruleSource: validatorId
+    }));
+  }
+  if (body.proseParagraphs.length === 0) {
+    findings.push(createFinding({
+      code: `${schemaId}-body-prose-missing`,
+      severity: "error",
+      message: "Artifact body must include readable prose, not only headings or list fragments.",
+      targetSurface: "artifact",
+      ruleSource: validatorId
+    }));
+  }
+  return findings;
+}
+
+function hasHeadingLike(headings: string[], patterns: RegExp[]): boolean {
+  return headings.some((heading) => patterns.some((pattern) => pattern.test(heading)));
+}
+
+function validateSchemaBody(rawContent: string, schemaId: SupportedSchemaId, spec: ValidatorSpec): ValidationFinding[] {
+  const body = parseBodyShape(rawContent);
+  const findings = validateBodyCommon(rawContent, schemaId, spec.validatorId);
+  if (schemaId === "tiinex.topic.v1") {
+    if (!hasHeadingLike(body.headings, [/^Current Read$/u, /^Design Direction$/u, /^Next (Artifacts|Steps)$/u, /^Open Questions$/u, /^Risks$/u])) {
+      findings.push(createFinding({
+        code: "tiinex.topic.v1-body-orientation-missing",
+        severity: "error",
+        message: "Topic artifacts must expose at least one readable topic-state section such as Current Read, Design Direction, Risks, Open Questions, or Next Artifacts/Steps.",
+        targetSurface: "artifact",
+        ruleSource: spec.validatorId
+      }));
+    }
+  }
+  if (schemaId === "tiinex.task.v1") {
+    if (!hasHeadingLike(body.headings, [/^Objective$/u, /^Requested Work$/u])) {
+      findings.push(createFinding({
+        code: "tiinex.task.v1-objective-missing",
+        severity: "error",
+        message: "Task artifacts must expose a readable work section such as Objective or Requested Work.",
+        targetSurface: "artifact",
+        ruleSource: spec.validatorId
+      }));
+    }
+    if (!hasHeadingLike(body.headings, [/^Done Criteria$/u, /^Acceptance Criteria$/u])) {
+      findings.push(createFinding({
+        code: "tiinex.task.v1-completion-signal-missing",
+        severity: "error",
+        message: "Task artifacts must expose a readable completion signal such as Done Criteria or Acceptance Criteria.",
+        targetSurface: "artifact",
+        ruleSource: spec.validatorId
+      }));
+    }
+    if (!hasHeadingLike(body.headings, [/^Scope$/u, /^Constraints?$/u, /^Boundaries$/u, /^Non-Goals$/u])) {
+      findings.push(createFinding({
+        code: "tiinex.task.v1-boundary-signal-missing",
+        severity: "error",
+        message: "Task artifacts must expose a readable boundary section such as Scope, Constraints, Boundaries, or Non-Goals.",
+        targetSurface: "artifact",
+        ruleSource: spec.validatorId
+      }));
+    }
+  }
+  return findings;
+}
+
 function asSupportedSchemaId(schemaId: string | undefined): SupportedSchemaId | undefined {
   if (schemaId === "tiinex.root.v1" || schemaId === "tiinex.topic.v1" || schemaId === "tiinex.task.v1") {
     return schemaId;
@@ -98,7 +256,7 @@ function asSupportedSchemaId(schemaId: string | undefined): SupportedSchemaId | 
 
 export function validateArtifact(input: ValidateArtifactInput): ValidateArtifactResult {
   const resolved = resolveArtifact({ ...input, includeRawContent: true });
-  const compatibilityNotes = ["initial validator coverage: continuity envelope only"];
+  const compatibilityNotes = ["initial validator coverage: continuity envelope plus minimal body-shape rules only"];
   if (!resolved.source.rawContent) {
     return {
       ...createOutputMetadata("validateArtifact"),
@@ -176,7 +334,10 @@ export function validateArtifact(input: ValidateArtifactInput): ValidateArtifact
   }
 
   const spec = VALIDATORS[governingSchemaId];
-  const findings = validateSchemaShape(envelope, spec);
+  const findings = [
+    ...validateSchemaShape(envelope, spec),
+    ...validateSchemaBody(resolved.source.rawContent, governingSchemaId, spec)
+  ];
   return {
     ...createOutputMetadata("validateArtifact"),
     compatibilityNotes,

@@ -39,7 +39,7 @@ Implemented in repo now:
 * shared core result, identity, finding, validation-basis, budget, handoff-shape, and projection-shape types
 * first source adapter path for local files plus GitHub blob/raw references
 * universal continuity-envelope parsing without child-schema dependency
-* initial shared `validateArtifact` support for `tiinex.root.v1`, `tiinex.topic.v1`, and `tiinex.task.v1`
+* initial shared `validateArtifact` support for `tiinex.root.v1`, `tiinex.topic.v1`, and `tiinex.task.v1`, now including minimal integrity/body-shape checks while remaining partial rather than full schema validation
 * bounded `getLineage` support with parent traversal, stopped reasons, cycle detection, depth/fetch budgets, and origin recovery candidates
 * compact `getHandoffPacket` support for fresh-chat orientation from shared core outputs
 * purpose-driven `getRelevantSlice` support with bounded slice selection, explicit exclusions, and optional raw-body inclusion
@@ -623,7 +623,7 @@ DoD:
 * [x] Returns structured access status.
 * [x] Returns exact-validation capability.
 * [x] Does not validate lineage by itself.
-* [ ] Does not return full body unless explicitly requested.
+* [x] Does not return full body unless explicitly requested.
 
 ### `readEnvelope`
 
@@ -678,6 +678,7 @@ DoD:
 * [x] Returns incomplete validation state when schema cannot be resolved.
 * [x] Returns exact-validation blocked state when raw source is unavailable.
 * [x] Does not mutate the artifact.
+* [x] Performs minimal body-shape validation for current root/topic/task support.
 
 ### `getLineage`
 
@@ -804,6 +805,7 @@ DoD:
 * [x] Includes do-not-traverse hints.
 * [x] Avoids full raw body by default.
 * [x] Does not claim full validation when exact validation is blocked.
+* [x] Consumer-facing handoff validation state degrades when validation remains partial.
 
 ---
 
