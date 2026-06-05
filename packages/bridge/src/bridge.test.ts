@@ -59,6 +59,7 @@ test("readEnvelope parses continuity envelope from a local Tiinex artifact", () 
   const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "kickstarter", "001.trace.md");
   const result = readEnvelope({ reference });
   assert.equal(result.status, "ok");
+  assert.equal(result.source.rawContent, undefined);
   assert.equal(result.envelope?.currentSchema?.label, "tiinex.pointer.v1");
   assert.equal(result.envelope?.integrity?.method, "sha256-base64url-c14n-v1");
   assert.ok(result.envelope?.currentOrigin?.browseGit?.includes("github.com/Tiinex/.github/blob/"));
@@ -87,6 +88,7 @@ test("validateArtifact returns ok for a known topic artifact", () => {
   const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "001.trace.md");
   const result = validateArtifact({ reference });
   assert.equal(result.status, "ok");
+  assert.equal(result.source.rawContent, undefined);
   assert.equal(result.governingSchemaId, "tiinex.topic.v1");
   assert.equal(result.validationBasis.usedRawSource, true);
 });
@@ -95,6 +97,7 @@ test("validateArtifact returns ok for a known task artifact", () => {
   const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "memes", "work", "remote", "001-1-echo-cloud-handoff.trace.md");
   const result = validateArtifact({ reference });
   assert.equal(result.status, "ok");
+  assert.equal(result.source.rawContent, undefined);
   assert.equal(result.governingSchemaId, "tiinex.task.v1");
   assert.equal(result.validationBasis.partialValidation, true);
   assert.ok(result.compatibilityNotes?.includes("initial validator coverage: continuity envelope plus minimal body-shape rules only"));
@@ -120,6 +123,8 @@ test("getLineage returns a bounded parent chain without conflating parent and or
   assert.equal(result.status, "incomplete");
   assert.equal(result.stoppedBecause, "max-depth");
   assert.equal(result.nodes.length, 2);
+  assert.equal(result.nodes[0]?.source.rawContent, undefined);
+  assert.equal(result.nodes[1]?.source.rawContent, undefined);
   assert.equal(result.nodes[0]?.parent?.traceTarget, "001.trace.md");
   assert.ok(result.nodes[0]?.originCandidates.every((candidate) => candidate !== result.nodes[0]?.parent?.traceTarget));
   assert.ok(result.originRecoveryCandidates.some((candidate) => candidate.includes("../001.trace.md") || candidate.includes("/work/001.trace.md")));

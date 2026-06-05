@@ -51,6 +51,7 @@ Implemented in repo now:
 * first `getTreeProjection`, `getNodeDetails`, and `getNodeChildren` projections built as thin layers above the shared index and envelope/validation outputs
 * GitHub blob/raw references with matching immutable identity evidence now collapse onto one canonical artifact id in shared source/core flows
 * `resolveArtifact` is now metadata-first by default and only returns bounded raw source when explicitly requested
+* `readEnvelope`, `validateArtifact`, and `getLineage` now sanitize returned source objects so internal raw reads do not leak full body content through public outputs
 * build and regression tests for `resolveArtifact`, `readEnvelope`, `validateArtifact`, `getLineage`, `getHandoffPacket`, `getRelevantSlice`, `getSchemaContract`, `getValidationOverlay`, `getAvailableActions`, `getStructureIndex`, `getTreeProjection`, `getNodeDetails`, and `getNodeChildren`
 
 Still intentionally incomplete:
@@ -679,6 +680,7 @@ DoD:
 * [x] Returns exact-validation blocked state when raw source is unavailable.
 * [x] Does not mutate the artifact.
 * [x] Performs minimal body-shape validation for current root/topic/task support.
+* [x] Does not expose raw body through returned source metadata.
 
 ### `getLineage`
 
@@ -714,6 +716,7 @@ DoD:
 * [x] Returns stopped reason.
 * [x] Uses canonical artifact identity for dedupe.
 * [x] Does not conflate parent and origin.
+* [x] Does not expose raw body through lineage node source metadata.
 * [ ] Does not silently choose between divergent origin candidates.
 
 ### `getSchemaContract`

@@ -4,7 +4,8 @@ import {
   type GetLineageInput,
   type GetLineageResult,
   type LineageNode,
-  createOutputMetadata
+  createOutputMetadata,
+  stripRawContentFromSource
 } from "@tiinex/lineage-bridge-core";
 import { parseContinuityEnvelope } from "@tiinex/lineage-bridge-parsers";
 import { resolveArtifact } from "@tiinex/lineage-bridge-sources";
@@ -27,7 +28,7 @@ function buildNode(depth: number, envelope: ContinuityEnvelope, resolved: Return
   return {
     depth,
     artifact: resolved.artifact,
-    source: resolved.source,
+    source: stripRawContentFromSource(resolved.source),
     schemaId: getSchemaId(envelope.currentSchema),
     summary: envelope.currentSummary,
     parent: envelope.parentTrace || envelope.parentSchema || envelope.parentCreatedAt

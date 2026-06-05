@@ -520,6 +520,11 @@ export function createOutputMetadata(toolName: BridgeToolName): BridgeOutputMeta
   };
 }
 
+export function stripRawContentFromSource(source: ResolvedArtifactSource): ResolvedArtifactSource {
+  const { rawContent, ...rest } = source;
+  return rest;
+}
+
 export function createValidationBasis(input: Omit<ValidationBasis, "outputShapeVersion">): ValidationBasis {
   return {
     ...input,

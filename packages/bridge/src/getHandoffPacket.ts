@@ -4,6 +4,7 @@ import {
   createOutputMetadata
 } from "@tiinex/lineage-bridge-core";
 import { parseContinuityEnvelope } from "@tiinex/lineage-bridge-parsers";
+import { resolveArtifact } from "@tiinex/lineage-bridge-sources";
 import { getLineage } from "./getLineage";
 import { validateArtifact } from "@tiinex/lineage-bridge-validators";
 import { selectRelevantSlices } from "./selectRelevantSlices";
@@ -56,7 +57,8 @@ function deriveDoNotTraverseHints(input: {
 export function getHandoffPacket(input: GetHandoffPacketInput): GetHandoffPacketResult {
   const validation = validateArtifact(input);
   const lineage = getLineage(input);
-  const envelope = validation.source.rawContent ? parseContinuityEnvelope(validation.source.rawContent) : undefined;
+  const artifact = resolveArtifact({ ...input, includeRawContent: true });
+  const envelope = artifact.source.rawContent ? parseContinuityEnvelope(artifact.source.rawContent) : undefined;
   const parentNode = lineage.nodes[1];
   const importantFindings = validation.findings.filter((finding) => finding.severity !== "info");
   const consumerFacingValidationStatus = deriveConsumerFacingValidationStatus(validation);

@@ -4,7 +4,8 @@ import {
   type ValidateArtifactResult,
   type ValidationFinding,
   createOutputMetadata,
-  createValidationBasis
+  createValidationBasis,
+  stripRawContentFromSource
 } from "@tiinex/lineage-bridge-core";
 import { parseContinuityEnvelope } from "@tiinex/lineage-bridge-parsers";
 import { resolveArtifact } from "@tiinex/lineage-bridge-sources";
@@ -256,13 +257,14 @@ function asSupportedSchemaId(schemaId: string | undefined): SupportedSchemaId | 
 
 export function validateArtifact(input: ValidateArtifactInput): ValidateArtifactResult {
   const resolved = resolveArtifact({ ...input, includeRawContent: true });
+  const source = stripRawContentFromSource(resolved.source);
   const compatibilityNotes = ["initial validator coverage: continuity envelope plus minimal body-shape rules only"];
   if (!resolved.source.rawContent) {
     return {
       ...createOutputMetadata("validateArtifact"),
       compatibilityNotes,
       status: resolved.status === "blocked" ? "blocked" : "incomplete",
-      source: resolved.source,
+      source,
       artifact: resolved.artifact,
       findings: [createFinding({
         code: "raw-source-unavailable",
@@ -300,7 +302,7 @@ export function validateArtifact(input: ValidateArtifactInput): ValidateArtifact
       ...createOutputMetadata("validateArtifact"),
       compatibilityNotes,
       status: "incomplete",
-      source: resolved.source,
+      source,
       artifact: resolved.artifact,
       governingSchemaId: getSchemaId(envelope.currentSchema),
       findings: [createFinding({
@@ -342,7 +344,7 @@ export function validateArtifact(input: ValidateArtifactInput): ValidateArtifact
     ...createOutputMetadata("validateArtifact"),
     compatibilityNotes,
     status: findings.some((finding) => finding.severity === "error") ? "invalid" : "ok",
-    source: resolved.source,
+    source,
     artifact: resolved.artifact,
     governingSchemaId,
     findings,

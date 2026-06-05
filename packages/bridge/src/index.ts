@@ -1,4 +1,4 @@
-import { type ReadEnvelopeInput, type ReadEnvelopeResult, createOutputMetadata } from "@tiinex/lineage-bridge-core";
+import { type ReadEnvelopeInput, type ReadEnvelopeResult, createOutputMetadata, stripRawContentFromSource } from "@tiinex/lineage-bridge-core";
 import { parseContinuityEnvelope } from "@tiinex/lineage-bridge-parsers";
 import { resolveArtifact } from "@tiinex/lineage-bridge-sources";
 import { validateArtifact } from "@tiinex/lineage-bridge-validators";
@@ -30,11 +30,12 @@ export * from "@tiinex/lineage-bridge-core";
 
 export function readEnvelope(input: ReadEnvelopeInput): ReadEnvelopeResult {
   const resolved = resolveArtifact({ ...input, includeRawContent: true });
+  const source = stripRawContentFromSource(resolved.source);
   if (!resolved.source.rawContent) {
     return {
       ...createOutputMetadata("readEnvelope"),
       status: resolved.status,
-      source: resolved.source,
+      source,
       artifact: resolved.artifact,
       complete: false,
       rawReadNeededForNextStep: true,
@@ -44,7 +45,7 @@ export function readEnvelope(input: ReadEnvelopeInput): ReadEnvelopeResult {
   return {
     ...createOutputMetadata("readEnvelope"),
     status: "ok",
-    source: resolved.source,
+    source,
     artifact: resolved.artifact,
     envelope: parseContinuityEnvelope(resolved.source.rawContent),
     complete: resolved.complete,
