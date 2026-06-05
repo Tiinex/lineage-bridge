@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "baseUrl": ".",
+    "paths": {
+      "@tiinex/lineage-bridge-core": ["../core/src"],
+      "@tiinex/lineage-bridge-parsers": ["../parsers/src"],
+      "@tiinex/lineage-bridge-sources": ["../sources/src"]
+    }
+  },
+  "references": [
+    { "path": "../core" },
+    { "path": "../parsers" },
+    { "path": "../sources" }
+  ],
+  "include": ["src/**/*.ts"]
+}

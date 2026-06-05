@@ -1,0 +1,11 @@
+{
+  "name": "@tiinex/lineage-bridge-sources",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@tiinex/lineage-bridge-core": "0.1.0"
+  }
+}

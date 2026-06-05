@@ -1,0 +1,14 @@
+{
+  "name": "@tiinex/lineage-bridge-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@tiinex/lineage-bridge-core": "0.1.0",
+    "@tiinex/lineage-bridge-parsers": "0.1.0",
+    "@tiinex/lineage-bridge-sources": "0.1.0",
+    "@tiinex/lineage-bridge-validators": "0.1.0"
+  }
+}

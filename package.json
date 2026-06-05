@@ -1,0 +1,21 @@
+{
+  "name": "@tiinex/lineage-bridge",
+  "private": true,
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "description": "Shared bridge tooling for bounded Tiinex lineage context.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "powershell -NoProfile -Command \"Get-ChildItem -Recurse -Directory dist | Remove-Item -Recurse -Force\"",
+    "test": "node --test packages/*/dist/**/*.test.js",
+    "cli": "node apps/cli/dist/index.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "typescript": "^5.8.3"
+  }
+}

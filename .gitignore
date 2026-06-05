@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.vsix
+
+ides/*/node_modules/
+ides/*/dist/
+ides/*/*.vsix
+assets/demo/video/*.mp4
+.venv/
+.venv*/
+TEMP-*.md
+.tmp*
+*.out
+*.log

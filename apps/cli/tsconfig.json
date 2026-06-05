@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "baseUrl": ".",
+    "paths": {
+      "@tiinex/lineage-bridge-bridge": ["../../packages/bridge/src"]
+    }
+  },
+  "references": [
+    { "path": "../../packages/bridge" }
+  ],
+  "include": ["src/**/*.ts"]
+}

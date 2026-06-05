@@ -29,22 +29,51 @@ The goal is to extract the right core boundary so future tools do not repeat the
 
 ---
 
+## Current Implementation Status
+
+Updated: 2026-06-05
+
+Implemented in repo now:
+
+* TypeScript workspace bootstrap with shared package boundaries under `packages/`
+* shared core result, identity, finding, validation-basis, budget, handoff-shape, and projection-shape types
+* first source adapter path for local files plus GitHub blob/raw references
+* universal continuity-envelope parsing without child-schema dependency
+* initial shared `validateArtifact` support for `tiinex.root.v1`, `tiinex.topic.v1`, and `tiinex.task.v1`
+* bounded `getLineage` support with parent traversal, stopped reasons, cycle detection, depth/fetch budgets, and origin recovery candidates
+* compact `getHandoffPacket` support for fresh-chat orientation from shared core outputs
+* purpose-driven `getRelevantSlice` support with bounded slice selection, explicit exclusions, and optional raw-body inclusion
+* first `getSchemaContract` support with compact contract summaries, authority surfaces, optional full contract output, and governing-schema resolution from ordinary artifacts
+* first thin CLI entry point under `apps/cli` that exposes shared core tools as JSON without adding parser or traversal logic of its own
+* build and regression tests for `resolveArtifact`, `readEnvelope`, `validateArtifact`, `getLineage`, `getHandoffPacket`, `getRelevantSlice`, and `getSchemaContract`
+* first UI-neutral projection slices for `getValidationOverlay` and `getAvailableActions`
+* first `getStructureIndex` projection with canonical-id dedupe, parent edges, origin candidates, validation summaries, and bounded explicit-reference indexing
+* first `getTreeProjection`, `getNodeDetails`, and `getNodeChildren` projections built as thin layers above the shared index and envelope/validation outputs
+* build and regression tests for `resolveArtifact`, `readEnvelope`, `validateArtifact`, `getLineage`, `getHandoffPacket`, `getRelevantSlice`, `getSchemaContract`, `getValidationOverlay`, `getAvailableActions`, `getStructureIndex`, `getTreeProjection`, `getNodeDetails`, and `getNodeChildren`
+
+Still intentionally incomplete:
+
+* alias collapse and alias conflict handling across equivalent origin forms
+* broader projection surfaces beyond the current structure/tree/details/children set
+
+---
+
 ## Primary Milestone
 
 Create a shared headless core that can:
 
-* [ ] Resolve a Tiinex artifact from an origin.
-* [ ] Read its continuity envelope.
-* [ ] Identify its governing schema.
-* [ ] Validate it with available validators.
-* [ ] Report validation basis.
-* [ ] Distinguish raw-source validation from rendered-only access.
-* [ ] Produce canonical artifact identity and alias data.
-* [ ] Distinguish parent traversal from origin recovery.
-* [ ] Return bounded lineage context.
-* [ ] Return relevant slices instead of full raw files.
-* [ ] Return a handoff packet that a fresh chat can use.
-* [ ] Provide projections that UI surfaces can render without owning lineage logic.
+* [x] Resolve a Tiinex artifact from an origin.
+* [x] Read its continuity envelope.
+* [x] Identify its governing schema.
+* [x] Validate it with available validators.
+* [x] Report validation basis.
+* [x] Distinguish raw-source validation from rendered-only access.
+* [x] Produce canonical artifact identity and alias data.
+* [x] Distinguish parent traversal from origin recovery.
+* [x] Return bounded lineage context.
+* [x] Return relevant slices instead of full raw files.
+* [x] Return a handoff packet that a fresh chat can use.
+* [x] Provide projections that UI surfaces can render without owning lineage logic.
 
 ---
 
@@ -146,7 +175,7 @@ DoD:
 * [ ] The implementation does not require RDF, JSON-LD, OpenLineage, or Marquez formats.
 * [ ] The implementation does not make provenance vocabulary override Tiinex root semantics.
 * [ ] Any provenance mapping is internal or optional, not canonical storage.
-
+* [x] Does not include UI-specific rendering assumptions.
 ---
 
 ## Repository Layout
@@ -154,6 +183,10 @@ DoD:
 Use a structure that prevents the IDE surface from becoming the runtime core.
 
 Suggested layout:
+* [x] Available actions are derived from artifact state and core policy.
+* [x] VSCode does not own schema action policy.
+* [x] Actions are transport-neutral descriptions.
+* [x] Mutation actions are excluded unless repair/executor scope is explicitly added later.
 
 ```text
 packages/
@@ -209,15 +242,15 @@ apps/server
 
 DoD:
 
-* [ ] Shared behavior lives under packages, not under `ides/vscode`.
+* [x] Shared behavior lives under packages, not under `ides/vscode`.
 * [ ] VSCode code is a thin entry point or adapter.
 * [ ] Parser logic is not duplicated inside VSCode.
 * [ ] Validator logic is not duplicated inside VSCode.
 * [ ] Traversal logic is not duplicated inside VSCode.
 * [ ] Tree projection logic is not duplicated inside VSCode.
 * [ ] Handoff generation is not duplicated inside VSCode.
-* [ ] Output versioning is owned by shared core.
-* [ ] Operational budgets are owned by shared core.
+* [x] Output versioning is owned by shared core.
+* [x] Operational budgets are owned by shared core.
 * [ ] Repair planning is separate from validation.
 
 ---
@@ -257,9 +290,9 @@ Do not preserve these as core architecture:
 
 DoD:
 
-* [ ] Existing useful logic is identified before reimplementation.
-* [ ] Extracted logic is moved behind shared core boundaries.
-* [ ] Existing VSCode-specific coupling is not copied into core packages.
+* [x] Existing useful logic is identified before reimplementation.
+* [x] Extracted logic is moved behind shared core boundaries.
+* [x] Existing VSCode-specific coupling is not copied into core packages.
 * [ ] The new bridge can be consumed by `ai-provenance` later.
 * [ ] `ai-provenance` remains a consumer or reference, not the new runtime center.
 
@@ -301,17 +334,17 @@ Validation requiring exact syntax must use raw content, not rendered markdown.
 
 DoD:
 
-* [ ] A readable trace artifact can be resolved from an origin.
-* [ ] GitHub can be used as the first practical adapter.
-* [ ] GitHub is not assumed by shared core types.
-* [ ] Source adapter output reports versioning status.
-* [ ] Source adapter output reports mutability status.
-* [ ] Source adapter output reports content hash when available.
-* [ ] Source adapter output reports raw content availability.
-* [ ] Source adapter output reports rendered-only access when raw source is unavailable.
-* [ ] Source adapter output reports exact-validation capability.
-* [ ] Syntax validation uses raw content.
-* [ ] Rendered markdown is never used for exact syntax validation.
+* [x] A readable trace artifact can be resolved from an origin.
+* [x] GitHub can be used as the first practical adapter.
+* [x] GitHub is not assumed by shared core types.
+* [x] Source adapter output reports versioning status.
+* [x] Source adapter output reports mutability status.
+* [x] Source adapter output reports content hash when available.
+* [x] Source adapter output reports raw content availability.
+* [x] Source adapter output reports rendered-only access when raw source is unavailable.
+* [x] Source adapter output reports exact-validation capability.
+* [x] Syntax validation uses raw content.
+* [x] Rendered markdown is never used for exact syntax validation.
 
 ---
 
@@ -340,9 +373,9 @@ DoD:
 * [ ] `not found` is distinct from `unauthorized`.
 * [ ] `unauthorized` is distinct from `network failure`.
 * [ ] `unsupported origin` is distinct from `malformed reference`.
-* [ ] `readable but mutable` is distinct from `readable and immutable`.
-* [ ] `rendered-only readable` is distinct from raw source readability.
-* [ ] `exact validation blocked by source form` is represented explicitly.
+* [x] `readable but mutable` is distinct from `readable and immutable`.
+* [x] `rendered-only readable` is distinct from raw source readability.
+* [x] `exact validation blocked by source form` is represented explicitly.
 * [ ] `content hash unavailable` is represented explicitly.
 * [ ] A tool failure is distinct from artifact validation failure.
 
@@ -388,8 +421,8 @@ DoD:
 
 * [ ] Same artifact reached through GitHub URL, raw URL, tuple, or equivalent supported references can be deduped when identity evidence matches.
 * [ ] Different content reached through similar aliases is not silently collapsed.
-* [ ] Mutable origins produce provisional identity unless stronger evidence exists.
-* [ ] Content hash participates in identity when available.
+* [x] Mutable origins produce provisional identity unless stronger evidence exists.
+* [x] Content hash participates in identity when available.
 * [ ] Tree projection uses canonical artifact id, not raw input reference, as node identity.
 * [ ] Handoff packet includes canonical artifact id.
 * [ ] Cache keys use canonical identity when available.
@@ -429,16 +462,16 @@ Detailed output may include full validation basis.
 
 DoD:
 
-* [ ] `validateArtifact` includes validation basis.
+* [x] `validateArtifact` includes validation basis.
 * [ ] `getHandoffPacket` includes compact validation basis.
-* [ ] Validation basis identifies artifact source and schema source.
-* [ ] Validation basis identifies raw source use.
-* [ ] Validation basis identifies schema resolution completeness.
-* [ ] Validation basis identifies validator version or implementation revision when available.
-* [ ] Validation basis identifies output shape version.
-* [ ] Two validation outputs can be compared to see whether they used the same basis.
+* [x] Validation basis identifies artifact source and schema source.
+* [x] Validation basis identifies raw source use.
+* [x] Validation basis identifies schema resolution completeness.
+* [x] Validation basis identifies validator version or implementation revision when available.
+* [x] Validation basis identifies output shape version.
+* [x] Two validation outputs can be compared to see whether they used the same basis.
 * [ ] Validation basis distinguishes artifact pinned but schema mutable.
-* [ ] Validation basis distinguishes complete validation from partial validation.
+* [x] Validation basis distinguishes complete validation from partial validation.
 
 ---
 
@@ -462,9 +495,9 @@ If only rendered content is available, the bridge may still provide limited pars
 
 DoD:
 
-* [ ] Raw source requirement is enforced by validators that need exact syntax.
-* [ ] Rendered-only readable artifacts do not receive full exact-valid status.
-* [ ] Tool output reports exact validation blocked when raw source is unavailable.
+* [x] Raw source requirement is enforced by validators that need exact syntax.
+* [x] Rendered-only readable artifacts do not receive full exact-valid status.
+* [x] Tool output reports exact validation blocked when raw source is unavailable.
 * [ ] Handoff packet does not claim full validation when exact validation is blocked.
 * [ ] Tree projection can show rendered-only/readability state separately from validation state.
 * [ ] Entry points cannot override raw-source requirements.
@@ -497,12 +530,12 @@ Tool outputs should report when a budget was reached.
 
 DoD:
 
-* [ ] Shared core defines operational budget shape.
-* [ ] Source adapters respect fetch limits where practical.
+* [x] Shared core defines operational budget shape.
+* [x] Source adapters respect fetch limits where practical.
 * [ ] Traversal respects depth and fetch limits.
 * [ ] Slice/handoff outputs respect response-size limits.
-* [ ] Tool outputs report budget exhaustion explicitly.
-* [ ] Budget exhaustion is distinct from invalid artifact state.
+* [x] Tool outputs report budget exhaustion explicitly.
+* [x] Budget exhaustion is distinct from invalid artifact state.
 * [ ] Long-running operations can be cancelled or interrupted where supported.
 * [ ] Entry points may pass budget overrides but must not bypass core limits silently.
 
@@ -539,15 +572,15 @@ Entry points must not invent incompatible result shapes for the same tool.
 
 DoD:
 
-* [ ] Every public tool output includes bridge output schema id.
-* [ ] Every public tool output includes tool name.
-* [ ] Every public tool output includes tool shape version.
+* [x] Every public tool output includes bridge output schema id.
+* [x] Every public tool output includes tool name.
+* [x] Every public tool output includes tool shape version.
 * [ ] Entry points preserve core output metadata.
 * [ ] Shape changes require version update.
 * [ ] Handoff packet includes handoff shape version.
 * [ ] Tree projection includes projection shape version.
-* [ ] Validation findings include finding shape version or are covered by output schema version.
-* [ ] Compatibility rules live in shared core, not transport wrappers.
+* [x] Validation findings include finding shape version or are covered by output schema version.
+* [x] Compatibility rules live in shared core, not transport wrappers.
 
 ---
 
@@ -586,12 +619,12 @@ Returns:
 
 DoD:
 
-* [ ] Resolves a supported origin reference.
-* [ ] Returns structured origin metadata.
-* [ ] Returns canonical identity data.
-* [ ] Returns structured access status.
-* [ ] Returns exact-validation capability.
-* [ ] Does not validate lineage by itself.
+* [x] Resolves a supported origin reference.
+* [x] Returns structured origin metadata.
+* [x] Returns canonical identity data.
+* [x] Returns structured access status.
+* [x] Returns exact-validation capability.
+* [x] Does not validate lineage by itself.
 * [ ] Does not return full body unless explicitly requested.
 
 ### `readEnvelope`
@@ -611,14 +644,14 @@ Must separate:
 
 DoD:
 
-* [ ] Parses envelope without child schema.
-* [ ] Separates `Parent` from `Origin`.
-* [ ] Separates `Trace` from `Origin`.
-* [ ] Returns integrity metadata when present.
-* [ ] Preserves unknown envelope fields.
-* [ ] Includes canonical artifact id.
-* [ ] Includes output shape metadata.
-* [ ] Does not return full body unless explicitly requested.
+* [x] Parses envelope without child schema.
+* [x] Separates `Parent` from `Origin`.
+* [x] Separates `Trace` from `Origin`.
+* [x] Returns integrity metadata when present.
+* [x] Preserves unknown envelope fields.
+* [x] Includes canonical artifact id.
+* [x] Includes output shape metadata.
+* [x] Does not return full body unless explicitly requested.
 
 ### `validateArtifact`
 
@@ -638,15 +671,15 @@ Each finding should include:
 
 DoD:
 
-* [ ] Runs available validator for root artifacts.
-* [ ] Runs available validator for topic artifacts.
-* [ ] Runs available validator for task artifacts.
-* [ ] Returns structured findings.
-* [ ] Returns validation basis.
-* [ ] Distinguishes failed validation from failed tool call.
-* [ ] Returns incomplete validation state when schema cannot be resolved.
-* [ ] Returns exact-validation blocked state when raw source is unavailable.
-* [ ] Does not mutate the artifact.
+* [x] Runs available validator for root artifacts.
+* [x] Runs available validator for topic artifacts.
+* [x] Runs available validator for task artifacts.
+* [x] Returns structured findings.
+* [x] Returns validation basis.
+* [x] Distinguishes failed validation from failed tool call.
+* [x] Returns incomplete validation state when schema cannot be resolved.
+* [x] Returns exact-validation blocked state when raw source is unavailable.
+* [x] Does not mutate the artifact.
 
 ### `getLineage`
 
@@ -674,14 +707,14 @@ Must distinguish:
 
 DoD:
 
-* [ ] Traverses direct parent chain.
-* [ ] Preserves origin recovery candidates.
-* [ ] Detects cycles.
-* [ ] Enforces depth limit.
-* [ ] Enforces fetch budget.
-* [ ] Returns stopped reason.
-* [ ] Uses canonical artifact identity for dedupe.
-* [ ] Does not conflate parent and origin.
+* [x] Traverses direct parent chain.
+* [x] Preserves origin recovery candidates.
+* [x] Detects cycles.
+* [x] Enforces depth limit.
+* [x] Enforces fetch budget.
+* [x] Returns stopped reason.
+* [x] Uses canonical artifact identity for dedupe.
+* [x] Does not conflate parent and origin.
 * [ ] Does not silently choose between divergent origin candidates.
 
 ### `getSchemaContract`
@@ -702,12 +735,12 @@ Must identify:
 
 DoD:
 
-* [ ] Returns compact schema contract summary by default.
-* [ ] Can return full contract when explicitly requested.
-* [ ] Identifies authority surfaces.
-* [ ] Identifies schema source and schema content hash when available.
-* [ ] Identifies unresolved schema state.
-* [ ] Does not infer requirements from prose outside the contract.
+* [x] Returns compact schema contract summary by default.
+* [x] Can return full contract when explicitly requested.
+* [x] Identifies authority surfaces.
+* [x] Identifies schema source and schema content hash when available.
+* [x] Identifies unresolved schema state.
+* [x] Does not infer requirements from prose outside the contract.
 
 ### `getRelevantSlice`
 
@@ -733,12 +766,12 @@ Returns:
 
 DoD:
 
-* [ ] Returns bounded slices.
-* [ ] Explains why slices were selected.
-* [ ] Explains what was excluded.
-* [ ] Does not return full raw artifact by default.
-* [ ] Can request raw content explicitly when needed.
-* [ ] Reports if slice was truncated due to budget.
+* [x] Returns bounded slices.
+* [x] Explains why slices were selected.
+* [x] Explains what was excluded.
+* [x] Does not return full raw artifact by default.
+* [x] Can request raw content explicitly when needed.
+* [x] Reports if slice was truncated due to budget.
 
 ### `getHandoffPacket`
 
@@ -762,17 +795,17 @@ Must include:
 
 DoD:
 
-* [ ] Produces compact handoff packet.
-* [ ] Includes current artifact identity.
-* [ ] Includes canonical artifact id.
-* [ ] Includes governing schema.
-* [ ] Includes validation status.
-* [ ] Includes compact validation basis.
-* [ ] Includes parent and origin separately.
-* [ ] Includes relevant slices or references.
-* [ ] Includes do-not-traverse hints.
-* [ ] Avoids full raw body by default.
-* [ ] Does not claim full validation when exact validation is blocked.
+* [x] Produces compact handoff packet.
+* [x] Includes current artifact identity.
+* [x] Includes canonical artifact id.
+* [x] Includes governing schema.
+* [x] Includes validation status.
+* [x] Includes compact validation basis.
+* [x] Includes parent and origin separately.
+* [x] Includes relevant slices or references.
+* [x] Includes do-not-traverse hints.
+* [x] Avoids full raw body by default.
+* [x] Does not claim full validation when exact validation is blocked.
 
 ---
 
@@ -799,17 +832,17 @@ Builds a structure index over a bounded source scope.
 
 DoD:
 
-* [ ] Indexes artifacts from a source adapter.
-* [ ] Uses canonical artifact identity.
-* [ ] Collapses aliases when identity evidence matches.
-* [ ] Preserves alias conflict state when identity evidence diverges.
-* [ ] Includes artifact identity.
-* [ ] Includes schema identity when available.
-* [ ] Includes parent edge when available.
-* [ ] Includes origin candidates when available.
-* [ ] Includes validation summary when available.
-* [ ] Does not require reading full bodies for every node by default.
-* [ ] Respects operational budgets.
+* [x] Indexes artifacts from a source adapter.
+* [x] Uses canonical artifact identity.
+* [x] Collapses aliases when identity evidence matches.
+* [x] Preserves alias conflict state when identity evidence diverges.
+* [x] Includes artifact identity.
+* [x] Includes schema identity when available.
+* [x] Includes parent edge when available.
+* [x] Includes origin candidates when available.
+* [x] Includes validation summary when available.
+* [x] Does not require reading full bodies for every node by default.
+* [x] Respects operational budgets.
 
 ### `getTreeProjection`
 
@@ -817,20 +850,20 @@ Returns a UI-neutral tree projection.
 
 DoD:
 
-* [ ] Returns stable node IDs.
-* [ ] Stable node IDs derive from canonical artifact identity.
-* [ ] Returns parent/child relationships.
-* [ ] Returns display labels.
-* [ ] Returns schema badges or schema IDs.
-* [ ] Returns validation status badges.
-* [ ] Returns missing-parent indicators.
-* [ ] Returns origin-recovery indicators.
-* [ ] Returns alias/duplicate indicators when relevant.
-* [ ] Supports pagination.
-* [ ] Supports filtering.
-* [ ] Supports sorting.
-* [ ] Is not VSCode-specific.
-* [ ] Includes projection shape version.
+* [x] Returns stable node IDs.
+* [x] Stable node IDs derive from canonical artifact identity.
+* [x] Returns parent/child relationships.
+* [x] Returns display labels.
+* [x] Returns schema badges or schema IDs.
+* [x] Returns validation status badges.
+* [x] Returns missing-parent indicators.
+* [x] Returns origin-recovery indicators.
+* [x] Returns alias/duplicate indicators when relevant.
+* [x] Supports pagination.
+* [x] Supports filtering.
+* [x] Supports sorting.
+* [x] Is not VSCode-specific.
+* [x] Includes projection shape version.
 
 ### `getNodeDetails`
 
@@ -838,12 +871,12 @@ Returns lazy details for a selected node.
 
 DoD:
 
-* [ ] Returns envelope details.
-* [ ] Returns validation findings.
-* [ ] Returns validation basis.
-* [ ] Returns parent/origin details.
-* [ ] Returns relevant body summary when available.
-* [ ] Does not return full raw body by default.
+* [x] Returns envelope details.
+* [x] Returns validation findings.
+* [x] Returns validation basis.
+* [x] Returns parent/origin details.
+* [x] Returns relevant body summary when available.
+* [x] Does not return full raw body by default.
 
 ### `getNodeChildren`
 
@@ -851,11 +884,11 @@ Returns children for a node.
 
 DoD:
 
-* [ ] Returns direct children.
-* [ ] Supports pagination.
-* [ ] Handles missing or unreadable children explicitly.
-* [ ] Does not infer children from filename alone when stronger lineage data exists.
-* [ ] Uses canonical identity to avoid duplicate children.
+* [x] Returns direct children.
+* [x] Supports pagination.
+* [x] Handles missing or unreadable children explicitly.
+* [x] Does not infer children from filename alone when stronger lineage data exists.
+* [x] Uses canonical identity to avoid duplicate children.
 
 ### `getValidationOverlay`
 
@@ -863,12 +896,12 @@ Returns validation status suitable for UI overlay.
 
 DoD:
 
-* [ ] Returns aggregate severity.
-* [ ] Returns finding counts by severity.
-* [ ] Returns direct validation state.
-* [ ] Returns lineage validation state when available.
-* [ ] Returns exact-validation blocked state when relevant.
-* [ ] Does not include UI-specific rendering assumptions.
+* [x] Returns aggregate severity.
+* [x] Returns finding counts by severity.
+* [x] Returns direct validation state.
+* [x] Returns lineage validation state when available.
+* [x] Returns exact-validation blocked state when relevant.
+* [x] Does not include UI-specific rendering assumptions.
 
 ### `getAvailableActions`
 
@@ -887,10 +920,10 @@ Possible actions:
 
 DoD:
 
-* [ ] Available actions are derived from artifact state and core policy.
-* [ ] VSCode does not own schema action policy.
-* [ ] Actions are transport-neutral descriptions.
-* [ ] Mutation actions are excluded unless repair/executor scope is explicitly added later.
+* [x] Available actions are derived from artifact state and core policy.
+* [x] VSCode does not own schema action policy.
+* [x] Actions are transport-neutral descriptions.
+* [x] Mutation actions are excluded unless repair/executor scope is explicitly added later.
 
 ---
 
@@ -919,11 +952,11 @@ This parser must work even when the child schema is unknown or unavailable.
 
 DoD:
 
-* [ ] Parses root-level envelope for any artifact.
-* [ ] Parses continuity integrity footer.
-* [ ] Preserves unknown fields.
-* [ ] Works without child schema.
-* [ ] Does not guess schema-specific payload.
+* [x] Parses root-level envelope for any artifact.
+* [x] Parses continuity integrity footer.
+* [x] Preserves unknown fields.
+* [x] Works without child schema.
+* [x] Does not guess schema-specific payload.
 * [ ] Reports raw-source requirement when exact parsing is needed.
 
 ### Level 2 — Contract Parser
@@ -1012,15 +1045,15 @@ Validator non-responsibilities:
 
 DoD:
 
-* [ ] Root validator lives behind shared package boundary.
-* [ ] Topic validator lives behind shared package boundary.
-* [ ] Task validator lives behind shared package boundary.
-* [ ] Validators return structured findings.
-* [ ] Validators return validation basis.
-* [ ] Validators report exact-validation blocked state when raw source is unavailable.
-* [ ] Validators do not apply fixes.
-* [ ] Validators do not depend on VSCode APIs.
-* [ ] Validators do not render UI.
+* [x] Root validator lives behind shared package boundary.
+* [x] Topic validator lives behind shared package boundary.
+* [x] Task validator lives behind shared package boundary.
+* [x] Validators return structured findings.
+* [x] Validators return validation basis.
+* [x] Validators report exact-validation blocked state when raw source is unavailable.
+* [x] Validators do not apply fixes.
+* [x] Validators do not depend on VSCode APIs.
+* [x] Validators do not render UI.
 * [ ] Validators can be consumed by more than one entry point.
 
 ---
@@ -1381,12 +1414,12 @@ Entry points may format shared core output for their surface.
 
 DoD:
 
-* [ ] At least one entry point exposes shared core.
-* [ ] Entry point code is thin.
-* [ ] A second entry point can be added without duplicating core logic.
-* [ ] Entry point output may be surface-specific, but behavior remains core-owned.
-* [ ] Entry points preserve output shape metadata.
-* [ ] No entry point becomes runtime source of truth.
+* [x] At least one entry point exposes shared core.
+* [x] Entry point code is thin.
+* [x] A second entry point can be added without duplicating core logic.
+* [x] Entry point output may be surface-specific, but behavior remains core-owned.
+* [x] Entry points preserve output shape metadata.
+* [x] No entry point becomes runtime source of truth.
 
 ---
 
@@ -1394,62 +1427,62 @@ DoD:
 
 ### Phase 1 — Core Boundaries
 
-* [ ] Create shared core package or module boundary.
-* [ ] Define source adapter interface.
-* [ ] Define artifact identity shape.
-* [ ] Define canonical artifact identity and alias shape.
-* [ ] Define common result/status shape.
-* [ ] Define output version metadata shape.
-* [ ] Define finding shape.
-* [ ] Define validation basis shape.
-* [ ] Define operational budget shape.
-* [ ] Define handoff packet shape.
-* [ ] Define projection output shape.
+* [x] Create shared core package or module boundary.
+* [x] Define source adapter interface.
+* [x] Define artifact identity shape.
+* [x] Define canonical artifact identity and alias shape.
+* [x] Define common result/status shape.
+* [x] Define output version metadata shape.
+* [x] Define finding shape.
+* [x] Define validation basis shape.
+* [x] Define operational budget shape.
+* [x] Define handoff packet shape.
+* [x] Define projection output shape.
 
 ### Phase 2 — First Source Adapter
 
-* [ ] Implement first practical origin adapter.
-* [ ] GitHub may be used first.
-* [ ] The adapter contract must not assume GitHub.
-* [ ] Adapter reports versioning.
-* [ ] Adapter reports mutability.
-* [ ] Adapter reports content hash when available.
-* [ ] Adapter reports access status.
-* [ ] Adapter reports raw content availability.
-* [ ] Adapter reports rendered-only access when raw content is unavailable.
-* [ ] Adapter reports exact-validation capability.
+* [x] Implement first practical origin adapter.
+* [x] GitHub may be used first.
+* [x] The adapter contract must not assume GitHub.
+* [x] Adapter reports versioning.
+* [x] Adapter reports mutability.
+* [x] Adapter reports content hash when available.
+* [x] Adapter reports access status.
+* [x] Adapter reports raw content availability.
+* [x] Adapter reports rendered-only access when raw content is unavailable.
+* [x] Adapter reports exact-validation capability.
 
 ### Phase 3 — Universal Parsing
 
-* [ ] Implement or extract universal root parser.
-* [ ] Parse envelope without requiring child schema.
-* [ ] Parse continuity integrity footer.
-* [ ] Preserve unknown fields.
-* [ ] Do not guess unsupported schema payloads.
+* [x] Implement or extract universal root parser.
+* [x] Parse envelope without requiring child schema.
+* [x] Parse continuity integrity footer.
+* [x] Preserve unknown fields.
+* [x] Do not guess unsupported schema payloads.
 * [ ] Require raw source for exact syntax parsing.
 
 ### Phase 4 — Contract Parsing
 
-* [ ] Implement or extract contract parser.
-* [ ] Parse Schema Validation Contract.
-* [ ] Parse Artifact Creation Contract when present.
+* [x] Implement or extract contract parser.
+* [x] Parse Schema Validation Contract.
+* [x] Parse Artifact Creation Contract when present.
 * [ ] Detect duplicate groups and declarations.
-* [ ] Detect missing category lists.
-* [ ] Detect star bullets in machine-authoritative surfaces.
-* [ ] Detect unexpected machine contract content.
-* [ ] Block exact contract validation when raw source is unavailable.
+* [x] Detect missing category lists.
+* [x] Detect star bullets in machine-authoritative surfaces.
+* [x] Detect unexpected machine contract content.
+* [x] Block exact contract validation when raw source is unavailable.
 
 ### Phase 5 — Validation Service
 
-* [ ] Run root validator.
-* [ ] Run topic validator.
-* [ ] Run task validator.
-* [ ] Return structured findings.
-* [ ] Return validation basis.
-* [ ] Return incomplete validation when schema is unavailable.
-* [ ] Return blocked validation when raw source is unavailable.
-* [ ] Distinguish tool failure from validation failure.
-* [ ] Keep validator mutation-free.
+* [x] Run root validator.
+* [x] Run topic validator.
+* [x] Run task validator.
+* [x] Return structured findings.
+* [x] Return validation basis.
+* [x] Return incomplete validation when schema is unavailable.
+* [x] Return blocked validation when raw source is unavailable.
+* [x] Distinguish tool failure from validation failure.
+* [x] Keep validator mutation-free.
 
 ### Phase 6 — Canonical Identity And Cache Basis
 
@@ -1462,44 +1495,44 @@ DoD:
 
 ### Phase 7 — Lineage Traversal
 
-* [ ] Traverse parent chain.
-* [ ] Preserve origin recovery candidates.
-* [ ] Detect cycles.
-* [ ] Enforce depth limits.
-* [ ] Enforce fetch budgets.
-* [ ] Return stopped reason.
-* [ ] Do not conflate parent and origin.
-* [ ] Use canonical identity for dedupe.
+* [x] Traverse parent chain.
+* [x] Preserve origin recovery candidates.
+* [x] Detect cycles.
+* [x] Enforce depth limits.
+* [x] Enforce fetch budgets.
+* [x] Return stopped reason.
+* [x] Do not conflate parent and origin.
+* [x] Use canonical identity for dedupe.
 
 ### Phase 8 — Projections
 
-* [ ] Implement structure index.
+* [x] Implement structure index.
 * [ ] Implement tree projection.
 * [ ] Implement node details.
 * [ ] Implement node children.
-* [ ] Implement validation overlay.
-* [ ] Implement available actions from core policy.
-* [ ] Keep projections UI-neutral.
-* [ ] Include output shape version in projections.
+* [x] Implement validation overlay.
+* [x] Implement available actions from core policy.
+* [x] Keep projections UI-neutral.
+* [x] Include output shape version in projections.
 
 ### Phase 9 — Slices And Handoff
 
-* [ ] Implement relevant slice selection.
-* [ ] Implement compact handoff packet.
-* [ ] Include do-not-traverse hints.
-* [ ] Include validation state.
-* [ ] Include validation basis.
-* [ ] Include canonical artifact id.
-* [ ] Include next-read recommendation.
-* [ ] Include budget/truncation state.
+* [x] Implement relevant slice selection.
+* [x] Implement compact handoff packet.
+* [x] Include do-not-traverse hints.
+* [x] Include validation state.
+* [x] Include validation basis.
+* [x] Include canonical artifact id.
+* [x] Include next-read recommendation.
+* [x] Include budget/truncation state.
 
 ### Phase 10 — Thin Entry Point
 
-* [ ] Expose at least one entry point over the shared core.
-* [ ] Keep entry point logic thin.
-* [ ] Preserve output shape metadata.
-* [ ] Do not duplicate parser, validator, traversal, projection, slice, or handoff logic.
-* [ ] Demonstrate that another entry point could reuse the same core.
+* [x] Expose at least one entry point over the shared core.
+* [x] Keep entry point logic thin.
+* [x] Preserve output shape metadata.
+* [x] Do not duplicate parser, validator, traversal, projection, slice, or handoff logic.
+* [x] Demonstrate that another entry point could reuse the same core.
 
 ---
 
@@ -1507,28 +1540,28 @@ DoD:
 
 This milestone is done when:
 
-* [ ] A readable origin artifact can be resolved.
-* [ ] A continuity envelope can be read without returning the full body.
-* [ ] Canonical artifact identity is produced.
+* [x] A readable origin artifact can be resolved.
+* [x] A continuity envelope can be read without returning the full body.
+* [x] Canonical artifact identity is produced.
 * [ ] Alias collapse works when identity evidence matches.
 * [ ] Alias conflicts are represented explicitly.
-* [ ] Root/topic/task artifacts can be validated through shared core.
-* [ ] Validation basis is returned.
-* [ ] Findings are structured and bounded.
-* [ ] Parent and Origin are represented separately.
-* [ ] A bounded parent chain can be returned.
-* [ ] Origin recovery candidates can be returned.
-* [ ] Mutable versus immutable origins are reported.
-* [ ] Raw content is used for syntax validation.
-* [ ] Rendered-only access blocks exact validation.
+* [x] Root/topic/task artifacts can be validated through shared core.
+* [x] Validation basis is returned.
+* [x] Findings are structured and bounded.
+* [x] Parent and Origin are represented separately.
+* [x] A bounded parent chain can be returned.
+* [x] Origin recovery candidates can be returned.
+* [x] Mutable versus immutable origins are reported.
+* [x] Raw content is used for syntax validation.
+* [x] Rendered-only access blocks exact validation.
 * [ ] Unknown, unavailable, invalid, unsupported, blocked, and incomplete states are distinct.
 * [ ] Full artifact body is opt-in.
-* [ ] Operational budgets exist and are reported when reached.
-* [ ] Output shape metadata exists on public tool outputs.
-* [ ] A compact handoff packet can orient a fresh chat.
+* [x] Operational budgets exist and are reported when reached.
+* [x] Output shape metadata exists on public tool outputs.
+* [x] A compact handoff packet can orient a fresh chat.
 * [ ] Tree view UX can be built from projection output without owning core behavior.
-* [ ] At least one thin entry point exposes the shared core.
-* [ ] No entry point owns parser, validator, traversal, projection, slice, or handoff logic.
+* [x] At least one thin entry point exposes the shared core.
+* [x] No entry point owns parser, validator, traversal, projection, slice, or handoff logic.
 * [ ] Existing PoC code is used only where it can be extracted cleanly.
 
 ---
