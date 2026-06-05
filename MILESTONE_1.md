@@ -58,6 +58,7 @@ Implemented in repo now:
 * `readEnvelope`, `validateArtifact`, and `getLineage` now sanitize returned source objects so internal raw reads do not leak full body content through public outputs
 * `validateArtifact` now blocks exact-validation claims when raw source is truncated by `maxArtifactBytes`, rather than treating bounded raw content as a full exact-validation input
 * `getLineage` now stops with `budget-exhausted` and `budgets.truncated: true` instead of parsing lineage state from truncated raw source
+* `readEnvelope`, `getHandoffPacket`, and `getRelevantSlice` now also refuse to parse truncated raw source as a trustworthy continuity envelope
 * acceptance coverage now proves a tree-view UX can orient from `getTreeProjection`, `getNodeDetails`, `getNodeChildren`, and `getAvailableActions` without UI-owned parsing, validation, or traversal logic
 * `getNodeDetails` now degrades its top-level status when the selected artifact is blocked, unknown, invalid, or still only partially validated
 * `getAvailableActions` now keeps transport-neutral action lists while degrading its own top-level status and completeness when validation, lineage, or schema resolution remain incomplete or blocked
@@ -664,6 +665,7 @@ DoD:
 * [x] Includes canonical artifact id.
 * [x] Includes output shape metadata.
 * [x] Does not return full body unless explicitly requested.
+* [x] Does not parse truncated raw source as an envelope.
 
 ### `validateArtifact`
 
@@ -790,6 +792,7 @@ DoD:
 * [x] Reports if slice was truncated due to budget.
 * [x] Exposes direct validation state separately from consumer-facing slice status.
 * [x] Consumer-facing slice status degrades when validation remains partial.
+* [x] Does not select envelope-derived slices from truncated raw source.
 
 ### `getHandoffPacket`
 
@@ -825,6 +828,7 @@ DoD:
 * [x] Avoids full raw body by default.
 * [x] Does not claim full validation when exact validation is blocked.
 * [x] Consumer-facing handoff validation state degrades when validation remains partial.
+* [x] Does not derive current-artifact summary or current-leaf summary from truncated raw source.
 
 ---
 

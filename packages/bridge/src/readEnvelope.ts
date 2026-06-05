@@ -5,6 +5,17 @@ import { resolveArtifact } from "@tiinex/lineage-bridge-sources";
 export function readEnvelope(input: ReadEnvelopeInput): ReadEnvelopeResult {
   const resolved = resolveArtifact({ ...input, includeRawContent: true });
   const source = stripRawContentFromSource(resolved.source);
+  if (resolved.budgets.truncated) {
+    return {
+      ...createOutputMetadata("readEnvelope"),
+      status: "incomplete",
+      source,
+      artifact: resolved.artifact,
+      complete: false,
+      rawReadNeededForNextStep: false,
+      budgets: resolved.budgets
+    };
+  }
   if (!resolved.source.rawContent) {
     return {
       ...createOutputMetadata("readEnvelope"),

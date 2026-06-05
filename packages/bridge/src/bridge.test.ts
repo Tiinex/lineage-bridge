@@ -86,6 +86,14 @@ test("readEnvelope parses continuity envelope from a local Tiinex artifact", () 
   assert.ok(result.envelope?.currentOrigin?.browseGit?.includes("github.com/Tiinex/.github/blob/"));
 });
 
+test("readEnvelope does not parse truncated raw source", () => {
+  const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "001.trace.md");
+  const result = readEnvelope({ reference, maxArtifactBytes: 128 });
+  assert.equal(result.status, "incomplete");
+  assert.equal(result.envelope, undefined);
+  assert.equal(result.budgets.truncated, true);
+});
+
 test("parseContinuityEnvelope stops at the first body boundary and supports plain Towards values", () => {
   const envelope = parseContinuityEnvelope(`# Continuity Context
 - Envelope Schema: [tiinex.root.v1](schema)
@@ -212,6 +220,9 @@ test("getHandoffPacket does not claim full validation when exact validation is b
   assert.equal(result.handoff.validation.basis.exactValidationBlocked, true);
   assert.equal(result.handoff.validation.basis.usedRawSource, false);
   assert.equal(result.handoff.budgets.truncated, true);
+  assert.equal(result.handoff.artifact.summary, undefined);
+  assert.equal(result.handoff.currentLeaf.summary, undefined);
+  assert.equal(result.handoff.relevantSlices.some((slice) => slice.label === "current-summary"), false);
   assert.ok(result.handoff.validation.findings.some((finding) => finding.code === "raw-source-truncated"));
 });
 
@@ -228,6 +239,15 @@ test("getRelevantSlice returns bounded handoff-oriented slices without raw body 
   assert.ok(result.selectedSlices.some((slice) => slice.label === "current-summary"));
   assert.ok(result.intentionallyExcluded.includes("full raw artifact body"));
   assert.equal(result.rawContent, undefined);
+});
+
+test("getRelevantSlice does not select summary slices from truncated raw source", () => {
+  const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "001.trace.md");
+  const result = getRelevantSlice({ reference, purpose: "handoff", maxArtifactBytes: 128 });
+  assert.equal(result.status, "incomplete");
+  assert.equal(result.artifact.summary, undefined);
+  assert.equal(result.selectedSlices.some((slice) => slice.label === "current-summary"), false);
+  assert.equal(result.budgets.truncated, true);
 });
 
 test("getSchemaContract reads authority surfaces from the root schema", () => {

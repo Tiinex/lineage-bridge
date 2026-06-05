@@ -29,7 +29,9 @@ export function getRelevantSlice(input: GetRelevantSliceInput): GetRelevantSlice
   const resolved = resolveArtifact({ ...input, includeRawContent: true });
   const validation = validateArtifact(input);
   const lineage = getLineage(input);
-  const envelope = resolved.source.rawContent ? parseContinuityEnvelope(resolved.source.rawContent) : undefined;
+  const envelope = resolved.source.rawContent && !resolved.budgets.truncated
+    ? parseContinuityEnvelope(resolved.source.rawContent)
+    : undefined;
   const importantFindings = validation.findings.filter((finding) => finding.severity !== "info");
   const selectedSlices = selectRelevantSlices({
     purpose: input.purpose,
@@ -39,11 +41,11 @@ export function getRelevantSlice(input: GetRelevantSliceInput): GetRelevantSlice
     lineageStoppedBecause: lineage.stoppedBecause
   });
   const status = deriveConsumerFacingSliceStatus({
-    rawReadable: Boolean(resolved.source.rawContent),
+    rawReadable: Boolean(resolved.source.rawContent) && !resolved.budgets.truncated,
     selectedSliceCount: selectedSlices.length,
     validation
   });
-  const complete = Boolean(resolved.source.rawContent) && validation.complete && selectedSlices.length > 0;
+  const complete = Boolean(resolved.source.rawContent) && !resolved.budgets.truncated && validation.complete && selectedSlices.length > 0;
 
   return {
     ...createOutputMetadata("getRelevantSlice"),

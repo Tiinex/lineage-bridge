@@ -58,7 +58,9 @@ export function getHandoffPacket(input: GetHandoffPacketInput): GetHandoffPacket
   const validation = validateArtifact(input);
   const lineage = getLineage(input);
   const artifact = resolveArtifact({ ...input, includeRawContent: true });
-  const envelope = artifact.source.rawContent ? parseContinuityEnvelope(artifact.source.rawContent) : undefined;
+  const envelope = artifact.source.rawContent && !artifact.budgets.truncated
+    ? parseContinuityEnvelope(artifact.source.rawContent)
+    : undefined;
   const parentNode = lineage.nodes[1];
   const importantFindings = validation.findings.filter((finding) => finding.severity !== "info");
   const consumerFacingValidationStatus = deriveConsumerFacingValidationStatus(validation);
@@ -126,15 +128,15 @@ export function getHandoffPacket(input: GetHandoffPacketInput): GetHandoffPacket
       relevantSlices,
       doNotTraverse,
       budgets: {
-        truncated: validation.budgets.truncated || lineage.budgets.truncated,
-        exhausted: [...new Set([...validation.budgets.exhausted, ...lineage.budgets.exhausted])]
+        truncated: artifact.budgets.truncated || validation.budgets.truncated || lineage.budgets.truncated,
+        exhausted: [...new Set([...artifact.budgets.exhausted, ...validation.budgets.exhausted, ...lineage.budgets.exhausted])]
       }
     },
     complete,
     rawReadNeededForNextStep: validation.rawReadNeededForNextStep || lineage.rawReadNeededForNextStep,
     budgets: {
-      truncated: validation.budgets.truncated || lineage.budgets.truncated,
-      exhausted: [...new Set([...validation.budgets.exhausted, ...lineage.budgets.exhausted])]
+      truncated: artifact.budgets.truncated || validation.budgets.truncated || lineage.budgets.truncated,
+      exhausted: [...new Set([...artifact.budgets.exhausted, ...validation.budgets.exhausted, ...lineage.budgets.exhausted])]
     }
   };
 }
