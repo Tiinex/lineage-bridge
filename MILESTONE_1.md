@@ -57,10 +57,12 @@ Implemented in repo now:
 * `resolveArtifact` is now metadata-first by default and only returns bounded raw source when explicitly requested
 * `readEnvelope`, `validateArtifact`, and `getLineage` now sanitize returned source objects so internal raw reads do not leak full body content through public outputs
 * `validateArtifact` now blocks exact-validation claims when raw source is truncated by `maxArtifactBytes`, rather than treating bounded raw content as a full exact-validation input
+* `getLineage` now stops with `budget-exhausted` and `budgets.truncated: true` instead of parsing lineage state from truncated raw source
 * acceptance coverage now proves a tree-view UX can orient from `getTreeProjection`, `getNodeDetails`, `getNodeChildren`, and `getAvailableActions` without UI-owned parsing, validation, or traversal logic
 * `getNodeDetails` now degrades its top-level status when the selected artifact is blocked, unknown, invalid, or still only partially validated
 * `getAvailableActions` now keeps transport-neutral action lists while degrading its own top-level status and completeness when validation, lineage, or schema resolution remain incomplete or blocked
 * `readEnvelope` now lives in its own module so `getNodeDetails` no longer relies on a circular import through the bridge index surface
+* `getStructureIndex` now avoids projecting schema, parent, or origin state from truncated raw source and instead carries truncation through validation and budgets
 * current repo audit shows no direct `ai-provenance` or `vscode` package/runtime dependency inside `packages/*`, while `apps/cli` remains a thin adapter over shared tool functions
 * build and regression tests for `resolveArtifact`, `readEnvelope`, `validateArtifact`, `getLineage`, `getHandoffPacket`, `getRelevantSlice`, `getSchemaContract`, `getValidationOverlay`, `getAvailableActions`, `getStructureIndex`, `getTreeProjection`, `getNodeDetails`, and `getNodeChildren`
 
@@ -728,6 +730,7 @@ DoD:
 * [x] Uses canonical artifact identity for dedupe.
 * [x] Does not conflate parent and origin.
 * [x] Does not expose raw body through lineage node source metadata.
+* [x] Does not parse lineage state from truncated raw source.
 * [ ] Does not silently choose between divergent origin candidates.
 
 ### `getSchemaContract`
@@ -859,6 +862,7 @@ DoD:
 * [x] Includes validation summary when available.
 * [x] Does not require reading full bodies for every node by default.
 * [x] Respects operational budgets.
+* [x] Does not project schema, parent, or origin state from truncated raw source.
 
 ### `getTreeProjection`
 

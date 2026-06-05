@@ -79,6 +79,7 @@ export function getLineage(input: GetLineageInput): GetLineageResult {
   let stoppedBecause: GetLineageResult["stoppedBecause"] = "complete";
   let originRecoveryCandidates: string[] = [];
   let rawReadNeededForNextStep = false;
+  let truncated = false;
 
   while (true) {
     if (fetches >= maxFetches) {
@@ -89,6 +90,13 @@ export function getLineage(input: GetLineageInput): GetLineageResult {
     const resolved = resolveArtifact({ reference: currentReference, maxArtifactBytes, includeRawContent: true });
     fetches += 1;
     lastArtifact = resolved.artifact;
+
+    if (resolved.budgets.truncated) {
+      truncated = true;
+      stoppedBecause = "budget-exhausted";
+      exhausted.push("maxArtifactBytes");
+      break;
+    }
 
     if (!resolved.source.rawContent) {
       stoppedBecause = nodes.length === 0 ? "unreadable-parent" : "unreadable-parent";
@@ -141,7 +149,7 @@ export function getLineage(input: GetLineageInput): GetLineageResult {
     complete,
     rawReadNeededForNextStep,
     budgets: {
-      truncated: false,
+      truncated,
       exhausted
     }
   };

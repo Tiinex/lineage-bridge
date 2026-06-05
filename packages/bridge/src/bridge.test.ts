@@ -179,6 +179,16 @@ test("getLineage detects cycles in local lineage traversal", () => {
   assert.equal(result.nodes[1]?.summary, "Cycle B");
 });
 
+test("getLineage does not parse lineage state from truncated raw source", () => {
+  const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "001.trace.md");
+  const result = getLineage({ reference, maxArtifactBytes: 128 });
+  assert.equal(result.status, "incomplete");
+  assert.equal(result.stoppedBecause, "budget-exhausted");
+  assert.equal(result.nodes.length, 0);
+  assert.equal(result.budgets.truncated, true);
+  assert.ok(result.budgets.exhausted.includes("maxArtifactBytes"));
+});
+
 test("getHandoffPacket returns a compact packet for a fresh chat", () => {
   const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "memes", "work", "remote", "001-1-echo-cloud-handoff.trace.md");
   const result = getHandoffPacket({ reference, maxDepth: 1 });
@@ -362,6 +372,18 @@ test("getStructureIndex marks alias conflict when similar GitHub aliases point a
   assert.equal(result.nodes.length, 2);
   assert.equal(result.nodes.every((node) => node.aliasConflict), true);
   assert.equal(result.nodes.some((node) => node.aliasCollapsed), false);
+});
+
+test("getStructureIndex does not project parent or schema state from truncated raw source", () => {
+  const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "001.trace.md");
+  const result = getStructureIndex({ references: [reference], maxArtifactBytes: 128 });
+  assert.equal(result.status, "incomplete");
+  assert.equal(result.budgets.truncated, true);
+  assert.equal(result.nodes[0]?.schemaId, undefined);
+  assert.equal(result.nodes[0]?.parentEdge, undefined);
+  assert.deepEqual(result.nodes[0]?.originCandidates, []);
+  assert.equal(result.nodes[0]?.validationSummary.status, "incomplete");
+  assert.equal(result.nodes[0]?.validationSummary.exactValidationBlocked, true);
 });
 
 test("getTreeProjection returns stable UI-neutral nodes with parent-child links", () => {

@@ -62,7 +62,9 @@ export function getStructureIndex(input: GetStructureIndexInput): GetStructureIn
     const validation = validateArtifact({ reference, maxArtifactBytes: input.maxArtifactBytes });
     rawReadNeededForNextStep = rawReadNeededForNextStep || validation.rawReadNeededForNextStep;
     truncated = truncated || resolved.budgets.truncated || validation.budgets.truncated;
-    const envelope = resolved.source.rawContent ? parseContinuityEnvelope(resolved.source.rawContent) : undefined;
+    const envelope = resolved.source.rawContent && !resolved.budgets.truncated
+      ? parseContinuityEnvelope(resolved.source.rawContent)
+      : undefined;
     const nodeId = resolved.artifact.canonicalArtifactId ?? resolved.source.normalizedReference ?? resolved.source.inputReference;
     const aliasFamilyKey = getAliasFamilyKey({ artifact: resolved.artifact, source: resolved.source });
     const findingCounts: StructureIndexNode["validationSummary"]["findingCounts"] = {
