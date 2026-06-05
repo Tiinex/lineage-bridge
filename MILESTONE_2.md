@@ -66,6 +66,7 @@ Current progress:
 * [x] M2 Leaf 6.1 completed: async composite bridge tools now share a per-operation async resolver cache and schema-budget context, so handoff and available-actions no longer duplicate remote fetches for the same artifact/schema inside one operation even though total operation-wide fetch-attempt and timeout policy is still not fully unified.
 * [x] M2 Leaf 6.2 completed: async composite bridge tools now also share actual remote fetch-attempt accounting across retries, including the default remote fetch path, so a retrying artifact pass can exhaust the same operation-wide `maxFetches` budget before later schema passes attempt another remote read.
 * [x] M2 Leaf 7 completed: the CLI now exposes async bridge tool variants plus thin source strategy, workspace, and network budget flags that merge into `sourceAccess` without re-owning bridge behavior, and top-level smoke inputs now cover both local workspace-policy and remote async-budget examples.
+* [x] M2 Leaf 8 completed: the repo now includes a short `.trace.md` instruction note that prefers bridge tools for normal orientation and lineage traversal, preserves legitimate raw-read exceptions for parser/schema/validator work, and states explicitly that instruction text is guidance rather than sandbox enforcement.
 
 Current async orientation caveat:
 
@@ -539,11 +540,11 @@ DoD:
 
 Do not start this phase until Phases 1–5 are stable and reviewed.
 
-* [ ] Add short `.trace.md` access policy note or instruction file.
-* [ ] Prefer bridge tools over raw trace reads.
-* [ ] Document legitimate raw-read exceptions.
-* [ ] Add raw-read override shape only if there is a concrete tool surface for it.
-* [ ] Do not present instruction text as enforcement.
+* [x] Add short `.trace.md` access policy note or instruction file.
+* [x] Prefer bridge tools over raw trace reads.
+* [x] Document legitimate raw-read exceptions.
+* [x] Add raw-read override shape only if there is a concrete tool surface for it.
+* [x] Do not present instruction text as enforcement.
 
 ### Phase 7 — CLI Exposure
 
@@ -586,7 +587,7 @@ Milestone 2 is done when:
 * [x] Cache identity is safe for immutable, mutable, and unsupported sources.
 * [x] Cached fallback does not mask fresh fetch failure.
 * [x] CLI exposes the new source behavior without owning source logic.
-* [ ] Agent-facing guidance prefers bridge tools over raw `.trace.md` reads without claiming to enforce sandboxing.
+* [x] Agent-facing guidance prefers bridge tools over raw `.trace.md` reads without claiming to enforce sandboxing.
 * [x] All Milestone 1 regression tests still pass.
 * [x] New Milestone 2 tests pass.
 
