@@ -4,6 +4,7 @@ import { resolveArtifact, resolveArtifactAsync } from "@tiinex/lineage-bridge-so
 import { validateArtifact, validateArtifactAsync } from "@tiinex/lineage-bridge-validators";
 import { getLineage, getLineageAsync } from "./getLineage";
 import { getIntentionallyExcluded, selectRelevantSlices } from "./selectRelevantSlices";
+import { createAsyncBridgeOperationContext } from "./asyncOperationContext";
 
 function deriveConsumerFacingSliceStatus(input: {
   rawReadable: boolean;
@@ -82,9 +83,10 @@ export function getRelevantSlice(input: GetRelevantSliceInput): GetRelevantSlice
 }
 
 export async function getRelevantSliceAsync(input: GetRelevantSliceInput): Promise<GetRelevantSliceResult> {
-  const resolved = await resolveArtifactAsync({ ...input, includeRawContent: true });
-  const validation = await validateArtifactAsync(input);
-  const lineage = await getLineageAsync(input);
+  const operation = createAsyncBridgeOperationContext(input.sourceAccess);
+  const resolved = await operation.resolve({ ...input, includeRawContent: true });
+  const validation = await validateArtifactAsync(input, operation.resolve, operation.consumeSchemaBudget);
+  const lineage = await getLineageAsync(input, operation.resolve);
   const envelope = resolved.source.rawContent && !resolved.budgets.truncated
     ? parseContinuityEnvelope(resolved.source.rawContent)
     : undefined;

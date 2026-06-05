@@ -8,6 +8,7 @@ import { resolveArtifact, resolveArtifactAsync } from "@tiinex/lineage-bridge-so
 import { getLineage, getLineageAsync } from "./getLineage";
 import { validateArtifact, validateArtifactAsync } from "@tiinex/lineage-bridge-validators";
 import { selectRelevantSlices } from "./selectRelevantSlices";
+import { createAsyncBridgeOperationContext } from "./asyncOperationContext";
 
 function deriveConsumerFacingValidationStatus(validation: Awaited<ReturnType<typeof validateArtifactAsync>>): GetHandoffPacketResult["handoff"]["validation"]["status"] {
   if (validation.status !== "ok") {
@@ -143,9 +144,10 @@ export function getHandoffPacket(input: GetHandoffPacketInput): GetHandoffPacket
 }
 
 export async function getHandoffPacketAsync(input: GetHandoffPacketInput): Promise<GetHandoffPacketResult> {
-  const validation = await validateArtifactAsync(input);
-  const lineage = await getLineageAsync(input);
-  const artifact = await resolveArtifactAsync({ ...input, includeRawContent: true });
+  const operation = createAsyncBridgeOperationContext(input.sourceAccess);
+  const validation = await validateArtifactAsync(input, operation.resolve, operation.consumeSchemaBudget);
+  const lineage = await getLineageAsync(input, operation.resolve);
+  const artifact = await operation.resolve({ ...input, includeRawContent: true });
   const envelope = artifact.source.rawContent && !artifact.budgets.truncated
     ? parseContinuityEnvelope(artifact.source.rawContent)
     : undefined;

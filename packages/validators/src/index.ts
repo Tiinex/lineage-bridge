@@ -1,6 +1,7 @@
 import path from "node:path";
 import {
   type ContinuityEnvelope,
+  type ResolveArtifactInput,
   type ResolveArtifactResult,
   type ResolvedArtifactSource,
   type ValidateArtifactInput,
@@ -537,16 +538,20 @@ export function validateArtifact(input: ValidateArtifactInput): ValidateArtifact
   return buildValidationResult(input, resolved, schemaResult);
 }
 
-export async function validateArtifactAsync(input: ValidateArtifactInput): Promise<ValidateArtifactResult> {
-  const resolved = await resolveArtifactAsync({ ...input, includeRawContent: true });
+export async function validateArtifactAsync(
+  input: ValidateArtifactInput,
+  resolveAsync: (input: ResolveArtifactInput) => Promise<ResolveArtifactResult> = resolveArtifactAsync,
+  consumeSchemaBudget: (sourceAccess?: ValidateArtifactInput["sourceAccess"]) => { sourceAccess?: ValidateArtifactInput["sourceAccess"]; schemaBudgetExhausted: boolean } = consumeSchemaFetchNetworkBudget
+): Promise<ValidateArtifactResult> {
+  const resolved = await resolveAsync({ ...input, includeRawContent: true });
   const schemaReference = resolved.source.rawContent
     ? resolveSchemaReference({ source: resolved.source, envelope: parseContinuityEnvelope(resolved.source.rawContent) })
     : undefined;
-  const schemaBudget = consumeSchemaFetchNetworkBudget(input.sourceAccess);
+  const schemaBudget = consumeSchemaBudget(input.sourceAccess);
   const schemaResult = schemaReference
     ? schemaBudget.schemaBudgetExhausted
       ? undefined
-      : await resolveArtifactAsync({ reference: schemaReference, maxArtifactBytes: input.maxArtifactBytes, includeRawContent: true, sourceAccess: schemaBudget.sourceAccess })
+      : await resolveAsync({ reference: schemaReference, maxArtifactBytes: input.maxArtifactBytes, includeRawContent: true, sourceAccess: schemaBudget.sourceAccess })
     : undefined;
   return buildValidationResult(input, resolved, schemaResult, schemaBudget.schemaBudgetExhausted ? ["maxSchemaFetches"] : []);
 }

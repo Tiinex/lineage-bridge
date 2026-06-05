@@ -62,6 +62,14 @@ Current progress:
 * [x] M2 Leaf 5.3 completed: fresh remote GitHub resolution can now degrade to explicit cached fallback when the fresh fetch fails, source output keeps the fresh-failure warning visible, and validation basis now reports cached-content use plus lack of fresh origin verification.
 * [x] M2 Leaf 5.4 completed: remote source access now enforces `maxFetches` before issuing remote GitHub fetches, async schema resolution consumes `maxSchemaFetches`, and budget exhaustion now surfaces as explicit blocked/incomplete budget state instead of silently proceeding as if another remote fetch were free.
 * [x] M2 Leaf 5.5 completed: remote retry policy is now explicit and conservative, retrying only timeout and network-failure cases within remaining fetch budget, while rate-limited and other non-retryable failures stop immediately; simulated timeout coverage is now part of the regression suite.
+* [x] M2 Leaf 6 completed: async orientation surfaces now exist for lineage, handoff, relevant slice, and available actions, remote-only parent traversal works through the async bridge path, cached fallback and schema-mutability truth reach handoff outputs, and remote truncation still does not get parsed as complete orientation state.
+* [x] M2 Leaf 6.1 completed: async composite bridge tools now share a per-operation async resolver cache and schema-budget context, so handoff and available-actions no longer duplicate remote fetches for the same artifact/schema inside one operation even though total operation-wide fetch-attempt and timeout policy is still not fully unified.
+* [x] M2 Leaf 6.2 completed: async composite bridge tools now also share actual remote fetch-attempt accounting across retries, including the default remote fetch path, so a retrying artifact pass can exhaust the same operation-wide `maxFetches` budget before later schema passes attempt another remote read.
+* [x] M2 Leaf 7 completed: the CLI now exposes async bridge tool variants plus thin source strategy, workspace, and network budget flags that merge into `sourceAccess` without re-owning bridge behavior, and top-level smoke inputs now cover both local workspace-policy and remote async-budget examples.
+
+Current async orientation caveat:
+
+* composite async bridge tools now share per-operation resolved-artifact cache, schema-budget state, and actual remote fetch-attempt accounting, but standalone async tool calls still rely on per-call source budgets rather than one broader cross-tool execution budget
 
 ---
 
@@ -541,9 +549,9 @@ Do not start this phase until Phases 1–5 are stable and reviewed.
 
 Do not start this phase until Phases 1–5 are stable and reviewed.
 
-* [ ] Expose source strategy/budget/workspace options through CLI.
-* [ ] Keep CLI thin.
-* [ ] Add CLI smoke examples.
+* [x] Expose source strategy/budget/workspace options through CLI.
+* [x] Keep CLI thin.
+* [x] Add CLI smoke examples.
 
 ### Phase 8 — Acceptance Tests
 
@@ -556,7 +564,7 @@ Do not start optional live or broad integration tests until Phases 1–5 are sta
 * [x] Relative schema from commit-pinned GitHub artifact resolves against commit context.
 * [x] Truncated remote raw source is not parsed as complete.
 * [x] Fresh fetch failure with cached fallback remains visible as degraded state.
-* [ ] Fresh chat can orient from remote GitHub artifact through bridge tools.
+* [x] Fresh chat can orient from remote GitHub artifact through bridge tools.
 
 ---
 
@@ -577,7 +585,7 @@ Milestone 2 is done when:
 * [ ] Remote source access respects budgets and truncation rules.
 * [x] Cache identity is safe for immutable, mutable, and unsupported sources.
 * [x] Cached fallback does not mask fresh fetch failure.
-* [ ] CLI exposes the new source behavior without owning source logic.
+* [x] CLI exposes the new source behavior without owning source logic.
 * [ ] Agent-facing guidance prefers bridge tools over raw `.trace.md` reads without claiming to enforce sandboxing.
 * [x] All Milestone 1 regression tests still pass.
 * [x] New Milestone 2 tests pass.

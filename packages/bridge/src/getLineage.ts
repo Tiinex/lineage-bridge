@@ -4,6 +4,8 @@ import {
   type GetLineageInput,
   type GetLineageResult,
   type LineageNode,
+  type ResolveArtifactInput,
+  type ResolveArtifactResult,
   createOutputMetadata,
   stripRawContentFromSource
 } from "@tiinex/lineage-bridge-core";
@@ -167,7 +169,10 @@ export function getLineage(input: GetLineageInput): GetLineageResult {
   };
 }
 
-export async function getLineageAsync(input: GetLineageInput): Promise<GetLineageResult> {
+export async function getLineageAsync(
+  input: GetLineageInput,
+  resolveAsync: (input: ResolveArtifactInput) => Promise<ResolveArtifactResult> = resolveArtifactAsync
+): Promise<GetLineageResult> {
   const maxDepth = input.maxDepth ?? 8;
   const maxFetches = input.maxFetches ?? 16;
   const maxArtifactBytes = input.maxArtifactBytes ?? 128_000;
@@ -189,7 +194,7 @@ export async function getLineageAsync(input: GetLineageInput): Promise<GetLineag
       exhausted.push("maxFetches");
       break;
     }
-    const resolved = await resolveArtifactAsync({ reference: currentReference, maxArtifactBytes, includeRawContent: true, sourceAccess: input.sourceAccess });
+    const resolved = await resolveAsync({ reference: currentReference, maxArtifactBytes, includeRawContent: true, sourceAccess: input.sourceAccess });
     fetches += 1;
     lastArtifact = resolved.artifact;
 
@@ -244,7 +249,7 @@ export async function getLineageAsync(input: GetLineageInput): Promise<GetLineag
   return {
     ...createOutputMetadata("getLineage"),
     status: complete ? "ok" : "incomplete",
-    artifact: nodes[0]?.artifact ?? lastArtifact ?? (await resolveArtifactAsync({ reference: input.reference, maxArtifactBytes, sourceAccess: input.sourceAccess })).artifact,
+    artifact: nodes[0]?.artifact ?? lastArtifact ?? (await resolveAsync({ reference: input.reference, maxArtifactBytes, sourceAccess: input.sourceAccess })).artifact,
     nodes,
     stoppedBecause,
     originRecoveryCandidates,

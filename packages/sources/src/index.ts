@@ -395,7 +395,7 @@ function shouldRetryRemoteResponse(response: RemoteFetchResponse): boolean {
   return response.ok !== true && (response.errorCode === "timeout" || response.errorCode === "network-failure");
 }
 
-async function defaultRemoteFetcher(request: RemoteFetchRequest): Promise<RemoteFetchResponse> {
+export async function defaultRemoteFetcher(request: RemoteFetchRequest): Promise<RemoteFetchResponse> {
   const controller = new AbortController();
   const timeoutMs = request.timeoutMs;
   const timeoutHandle = typeof timeoutMs === "number" && timeoutMs > 0

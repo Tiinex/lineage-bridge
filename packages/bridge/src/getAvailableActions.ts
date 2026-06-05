@@ -2,6 +2,7 @@ import { type AvailableAction, type GetAvailableActionsInput, type GetAvailableA
 import { getLineage, getLineageAsync } from "./getLineage";
 import { validateArtifact, validateArtifactAsync } from "@tiinex/lineage-bridge-validators";
 import { getSchemaContract, getSchemaContractAsync } from "./getSchemaContract";
+import { createAsyncBridgeOperationContext } from "./asyncOperationContext";
 
 function action(actionId: AvailableAction["actionId"], title: string, enabled: boolean, reason: string): AvailableAction {
   return { actionId, title, enabled, reason };
@@ -56,9 +57,10 @@ export function getAvailableActions(input: GetAvailableActionsInput): GetAvailab
 }
 
 export async function getAvailableActionsAsync(input: GetAvailableActionsInput): Promise<GetAvailableActionsResult> {
-  const validation = await validateArtifactAsync(input);
-  const lineage = await getLineageAsync(input);
-  const schemaContract = await getSchemaContractAsync({ reference: input.reference, maxArtifactBytes: input.maxArtifactBytes, sourceAccess: input.sourceAccess });
+  const operation = createAsyncBridgeOperationContext(input.sourceAccess);
+  const validation = await validateArtifactAsync(input, operation.resolve, operation.consumeSchemaBudget);
+  const lineage = await getLineageAsync(input, operation.resolve);
+  const schemaContract = await getSchemaContractAsync({ reference: input.reference, maxArtifactBytes: input.maxArtifactBytes, sourceAccess: input.sourceAccess }, operation.resolve, operation.consumeSchemaBudget);
   const hasParent = Boolean(lineage.nodes[0]?.parent?.traceTarget);
   const rawReadable = !validation.rawReadNeededForNextStep;
 

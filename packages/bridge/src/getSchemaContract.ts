@@ -1,5 +1,5 @@
 import path from "node:path";
-import { type ContinuityEnvelope, type GetSchemaContractInput, type GetSchemaContractResult, createOutputMetadata } from "@tiinex/lineage-bridge-core";
+import { type ContinuityEnvelope, type GetSchemaContractInput, type GetSchemaContractResult, type ResolveArtifactInput, type ResolveArtifactResult, createOutputMetadata } from "@tiinex/lineage-bridge-core";
 import { parseContinuityEnvelope, parseSchemaContracts } from "@tiinex/lineage-bridge-parsers";
 import { resolveArtifact, resolveArtifactAsync } from "@tiinex/lineage-bridge-sources";
 
@@ -172,15 +172,19 @@ export function getSchemaContract(input: GetSchemaContractInput): GetSchemaContr
   return createResolvedResult({ artifact, schemaResult, includeFullContract: input.includeFullContract });
 }
 
-export async function getSchemaContractAsync(input: GetSchemaContractInput): Promise<GetSchemaContractResult> {
-  const artifact = await resolveArtifactAsync({ ...input, includeRawContent: true });
+export async function getSchemaContractAsync(
+  input: GetSchemaContractInput,
+  resolveAsync: (input: ResolveArtifactInput) => Promise<ResolveArtifactResult> = resolveArtifactAsync,
+  consumeSchemaBudget: (sourceAccess?: GetSchemaContractInput["sourceAccess"]) => { sourceAccess?: GetSchemaContractInput["sourceAccess"]; schemaBudgetExhausted: boolean } = consumeSchemaFetchNetworkBudget
+): Promise<GetSchemaContractResult> {
+  const artifact = await resolveAsync({ ...input, includeRawContent: true });
   const envelope = artifact.source.rawContent ? parseContinuityEnvelope(artifact.source.rawContent) : undefined;
   const schemaReference = resolveSchemaReference({ source: artifact.source, envelope });
-  const schemaBudget = consumeSchemaFetchNetworkBudget(input.sourceAccess);
+  const schemaBudget = consumeSchemaBudget(input.sourceAccess);
   const schemaResult = schemaReference
     ? schemaBudget.schemaBudgetExhausted
       ? undefined
-      : await resolveArtifactAsync({ reference: schemaReference, maxArtifactBytes: input.maxArtifactBytes, includeRawContent: true, sourceAccess: schemaBudget.sourceAccess })
+      : await resolveAsync({ reference: schemaReference, maxArtifactBytes: input.maxArtifactBytes, includeRawContent: true, sourceAccess: schemaBudget.sourceAccess })
     : undefined;
 
   if (!schemaResult?.source.rawContent) {
