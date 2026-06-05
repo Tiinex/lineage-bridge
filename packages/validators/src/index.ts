@@ -301,7 +301,7 @@ export function validateArtifact(input: ValidateArtifactInput): ValidateArtifact
     return {
       ...createOutputMetadata("validateArtifact"),
       compatibilityNotes,
-      status: "incomplete",
+      status: "unknown",
       source,
       artifact: resolved.artifact,
       governingSchemaId: getSchemaId(envelope.currentSchema),

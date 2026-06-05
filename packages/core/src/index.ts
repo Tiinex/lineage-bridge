@@ -2,7 +2,7 @@ export const BRIDGE_OUTPUT_SCHEMA_V1 = "tiinex.lineage-bridge.result.v1" as cons
 
 export type BridgeToolName = "resolveArtifact" | "readEnvelope" | "validateArtifact" | "getLineage" | "getHandoffPacket" | "getRelevantSlice" | "getSchemaContract" | "getValidationOverlay" | "getAvailableActions" | "getStructureIndex" | "getTreeProjection" | "getNodeDetails" | "getNodeChildren";
 
-export type BridgeTopLevelStatus = "ok" | "invalid" | "unavailable" | "unsupported" | "incomplete" | "blocked";
+export type BridgeTopLevelStatus = "ok" | "invalid" | "unavailable" | "unsupported" | "unknown" | "incomplete" | "blocked";
 
 export type OriginAccessStatus =
   | "readable"
@@ -34,6 +34,12 @@ export interface ArtifactIdentity {
   canonicalArtifactId?: string;
   immutableSourceIdentity?: string;
   identityFamilyKey?: string;
+  cacheIdentity: {
+    cacheable: boolean;
+    cacheKey?: string;
+    cacheScope: "content" | "immutable-origin" | "mutable-origin" | "none";
+    reason: string;
+  };
   aliases: string[];
   identityInputsUsed: string[];
   identityConfidence: "high" | "medium" | "low";
@@ -322,6 +328,9 @@ export interface StructureIndexNode {
   nodeId: string;
   artifact: ArtifactIdentity;
   primaryReference: string;
+  sourceAccessStatus: OriginAccessStatus;
+  rawContentAvailability: RawContentAvailability;
+  renderedContentAvailability: boolean;
   schemaId?: string;
   summary?: string;
   parentEdge?: {
@@ -358,6 +367,9 @@ export interface TreeProjectionNode {
   parentNodeId?: string;
   childNodeIds: string[];
   displayLabel: string;
+  sourceAccessStatus: OriginAccessStatus;
+  rawContentAvailability: RawContentAvailability;
+  renderedContentAvailability: boolean;
   schemaId?: string;
   validationStatus: BridgeTopLevelStatus;
   aggregateSeverity: "none" | FindingSeverity;

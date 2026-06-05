@@ -53,6 +53,9 @@ function projectionStatus(nodes: TreeProjectionNode[]): GetTreeProjectionResult[
   if (nodes.some((node) => node.validationStatus === "blocked")) {
     return "blocked";
   }
+  if (nodes.some((node) => node.validationStatus === "unknown")) {
+    return "unknown";
+  }
   if (nodes.some((node) => node.validationStatus === "incomplete")) {
     return "incomplete";
   }
@@ -83,6 +86,9 @@ export function getTreeProjection(input: GetTreeProjectionInput): GetTreeProject
       parentNodeId,
       childNodeIds: [],
       displayLabel: node.summary ?? path.basename(node.primaryReference),
+      sourceAccessStatus: node.sourceAccessStatus,
+      rawContentAvailability: node.rawContentAvailability,
+      renderedContentAvailability: node.renderedContentAvailability,
       schemaId: node.schemaId,
       validationStatus: node.validationSummary.status,
       aggregateSeverity: node.validationSummary.aggregateSeverity,

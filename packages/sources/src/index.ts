@@ -27,12 +27,43 @@ function createIdentity(input: {
   provisional: boolean;
 }): ArtifactIdentity {
   const identityAnchor = input.immutableSourceIdentity ?? input.normalizedReference;
+  const canonicalArtifactId = identityAnchor && input.contentHash
+    ? `sha256:${input.contentHash}:${identityAnchor}`
+    : identityAnchor;
+
+  const cacheIdentity = input.immutableSourceIdentity
+    ? {
+        cacheable: true,
+        cacheKey: canonicalArtifactId ?? input.immutableSourceIdentity,
+        cacheScope: "immutable-origin" as const,
+        reason: input.contentHash
+          ? "Immutable source identity and content hash make this artifact safe to cache by canonical identity."
+          : "Immutable source identity makes this artifact safe to cache by origin even when content hash is unavailable."
+      }
+    : input.contentHash
+      ? {
+          cacheable: true,
+          cacheKey: `sha256:${input.contentHash}`,
+          cacheScope: "content" as const,
+          reason: "Only content-scoped caching is safe because the source identity is mutable or provisional."
+        }
+      : input.normalizedReference
+        ? {
+            cacheable: false,
+            cacheScope: "mutable-origin" as const,
+            reason: "Mutable or provisional origin identity without content hash is not cache-safe."
+          }
+        : {
+            cacheable: false,
+            cacheScope: "none" as const,
+            reason: "No stable cache identity can be derived from this artifact reference."
+          };
+
   return {
-    canonicalArtifactId: identityAnchor && input.contentHash
-      ? `sha256:${input.contentHash}:${identityAnchor}`
-      : identityAnchor,
+    canonicalArtifactId,
     immutableSourceIdentity: input.immutableSourceIdentity,
     identityFamilyKey: input.identityFamilyKey,
+    cacheIdentity,
     aliases: input.normalizedReference ? [input.normalizedReference] : [],
     identityInputsUsed: [
       ...(input.immutableSourceIdentity ? ["immutableSourceIdentity"] : []),

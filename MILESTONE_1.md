@@ -48,11 +48,16 @@ Implemented in repo now:
 * first thin CLI entry point under `apps/cli` that exposes shared core tools as JSON without adding parser or traversal logic of its own
 * build and regression tests for `resolveArtifact`, `readEnvelope`, `validateArtifact`, `getLineage`, `getHandoffPacket`, `getRelevantSlice`, and `getSchemaContract`
 * first UI-neutral projection slices for `getValidationOverlay` and `getAvailableActions`
+* tree-facing projections now expose source readability separately from validation state, including rendered-only and blocked local-mirror cases
 * first `getStructureIndex` projection with canonical-id dedupe, parent edges, origin candidates, validation summaries, and bounded explicit-reference indexing
 * first `getTreeProjection`, `getNodeDetails`, and `getNodeChildren` projections built as thin layers above the shared index and envelope/validation outputs
 * GitHub blob/raw references with matching immutable identity evidence now collapse onto one canonical artifact id in shared source/core flows
+* artifact identity now carries cache-safe identity fields that distinguish immutable-origin caching, content-only caching, and not-cache-safe cases
+* bridge status families now include a distinct `unknown` state for readable artifacts whose governing schema is still unsupported, and projections preserve that state separately from `incomplete`
 * `resolveArtifact` is now metadata-first by default and only returns bounded raw source when explicitly requested
 * `readEnvelope`, `validateArtifact`, and `getLineage` now sanitize returned source objects so internal raw reads do not leak full body content through public outputs
+* acceptance coverage now proves a tree-view UX can orient from `getTreeProjection`, `getNodeDetails`, `getNodeChildren`, and `getAvailableActions` without UI-owned parsing, validation, or traversal logic
+* current repo audit shows no direct `ai-provenance` or `vscode` package/runtime dependency inside `packages/*`, while `apps/cli` remains a thin adapter over shared tool functions
 * build and regression tests for `resolveArtifact`, `readEnvelope`, `validateArtifact`, `getLineage`, `getHandoffPacket`, `getRelevantSlice`, `getSchemaContract`, `getValidationOverlay`, `getAvailableActions`, `getStructureIndex`, `getTreeProjection`, `getNodeDetails`, and `getNodeChildren`
 
 Still intentionally incomplete:
@@ -425,7 +430,7 @@ DoD:
 * [x] Content hash participates in identity when available.
 * [x] Tree projection uses canonical artifact id, not raw input reference, as node identity.
 * [x] Handoff packet includes canonical artifact id.
-* [ ] Cache keys use canonical identity when available.
+* [x] Cache keys use canonical identity when available.
 * [x] Alias conflicts produce warning or explicit ambiguity state.
 * [x] Alias collapse rules live in shared core, not in entry points.
 
@@ -499,7 +504,7 @@ DoD:
 * [x] Rendered-only readable artifacts do not receive full exact-valid status.
 * [x] Tool output reports exact validation blocked when raw source is unavailable.
 * [ ] Handoff packet does not claim full validation when exact validation is blocked.
-* [ ] Tree projection can show rendered-only/readability state separately from validation state.
+* [x] Tree projection can show rendered-only/readability state separately from validation state.
 * [ ] Entry points cannot override raw-source requirements.
 
 ---
@@ -1287,7 +1292,7 @@ DoD:
 * [ ] Outputs include canonical identity when applicable.
 * [ ] Outputs distinguish complete from partial.
 * [ ] Outputs distinguish invalid from unavailable.
-* [ ] Outputs distinguish unknown from unsupported.
+* [x] Outputs distinguish unknown from unsupported.
 * [ ] Outputs distinguish blocked from invalid.
 * [ ] Outputs include raw-read-needed signal when relevant.
 * [ ] Outputs include budget status when relevant.
@@ -1497,7 +1502,7 @@ DoD:
 * [x] Detect alias conflicts.
 * [x] Use content hash when available.
 * [x] Represent provisional identity for mutable origins.
-* [ ] Provide cache-safe identity fields.
+* [x] Provide cache-safe identity fields.
 
 ### Phase 7 — Lineage Traversal
 
@@ -1560,15 +1565,15 @@ This milestone is done when:
 * [x] Mutable versus immutable origins are reported.
 * [x] Raw content is used for syntax validation.
 * [x] Rendered-only access blocks exact validation.
-* [ ] Unknown, unavailable, invalid, unsupported, blocked, and incomplete states are distinct.
+* [x] Unknown, unavailable, invalid, unsupported, blocked, and incomplete states are distinct.
 * [x] Full artifact body is opt-in.
 * [x] Operational budgets exist and are reported when reached.
 * [x] Output shape metadata exists on public tool outputs.
 * [x] A compact handoff packet can orient a fresh chat.
-* [ ] Tree view UX can be built from projection output without owning core behavior.
+* [x] Tree view UX can be built from projection output without owning core behavior.
 * [x] At least one thin entry point exposes the shared core.
 * [x] No entry point owns parser, validator, traversal, projection, slice, or handoff logic.
-* [ ] Existing PoC code is used only where it can be extracted cleanly.
+* [x] Existing PoC code is used only where it can be extracted cleanly.
 
 ---
 

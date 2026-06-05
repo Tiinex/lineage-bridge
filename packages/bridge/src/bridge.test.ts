@@ -14,6 +14,12 @@ test("resolveArtifact reads a local Tiinex artifact", () => {
   assert.equal(result.source.rawContent, undefined);
   assert.equal(result.rawReadNeededForNextStep, true);
   assert.ok(result.artifact.canonicalArtifactId);
+  assert.deepEqual(result.artifact.cacheIdentity, {
+    cacheable: true,
+    cacheKey: `sha256:${result.artifact.contentHash}`,
+    cacheScope: "content",
+    reason: "Only content-scoped caching is safe because the source identity is mutable or provisional."
+  });
   assert.ok(result.compatibilityNotes?.includes("Raw source is omitted by default; request includeRawContent to access bounded raw content."));
   assert.ok(result.source.warnings.every((warning) => !warning.includes("local-mirror")));
 });
@@ -36,9 +42,23 @@ test("resolveArtifact collapses equivalent GitHub blob and raw references onto t
   assert.equal(blobResult.status, "ok");
   assert.equal(rawResult.status, "ok");
   assert.equal(blobResult.artifact.canonicalArtifactId, rawResult.artifact.canonicalArtifactId);
+  assert.equal(blobResult.artifact.cacheIdentity.cacheable, true);
+  assert.equal(blobResult.artifact.cacheIdentity.cacheScope, "immutable-origin");
+  assert.equal(blobResult.artifact.cacheIdentity.cacheKey, blobResult.artifact.canonicalArtifactId);
+  assert.equal(rawResult.artifact.cacheIdentity.cacheKey, rawResult.artifact.canonicalArtifactId);
   assert.deepEqual(blobResult.artifact.identityInputsUsed, ["immutableSourceIdentity", "contentHash"]);
   assert.deepEqual(rawResult.artifact.identityInputsUsed, ["immutableSourceIdentity", "contentHash"]);
   assert.equal(blobResult.artifact.immutableSourceIdentity, rawResult.artifact.immutableSourceIdentity);
+});
+
+test("resolveArtifact marks unsupported references as not cache-safe", () => {
+  const result = resolveArtifact({ reference: "https://example.com/not-supported.trace.md" });
+  assert.equal(result.status, "unsupported");
+  assert.deepEqual(result.artifact.cacheIdentity, {
+    cacheable: false,
+    cacheScope: "none",
+    reason: "No stable cache identity can be derived from this artifact reference."
+  });
 });
 
 test("classifyAliasFamilies marks divergent node ids in one alias family as conflict", () => {
@@ -116,6 +136,14 @@ test("validateArtifact returns invalid when a task artifact has no readable comp
   const result = validateArtifact({ reference });
   assert.equal(result.status, "invalid");
   assert.ok(result.findings.some((finding) => finding.code === "tiinex.task.v1-completion-signal-missing"));
+});
+
+test("validateArtifact returns unknown when the artifact schema is readable but unsupported", () => {
+  const reference = path.resolve(__dirname, "..", "src", "fixtures", "unknown-schema.trace.md");
+  const result = validateArtifact({ reference });
+  assert.equal(result.status, "unknown");
+  assert.equal(result.governingSchemaId, "tiinex.decision.v1");
+  assert.ok(result.findings.some((finding) => finding.code === "validator-unavailable-for-schema"));
 });
 
 test("getLineage returns a bounded parent chain without conflating parent and origin", () => {
@@ -241,6 +269,16 @@ test("getValidationOverlay returns a UI-neutral validation summary", () => {
   assert.ok(result.compatibilityNotes?.includes("initial validator coverage: continuity envelope plus minimal body-shape rules only"));
 });
 
+test("getStructureIndex and tree projection preserve unknown validation status separately from incomplete", () => {
+  const reference = path.resolve(__dirname, "..", "src", "fixtures", "unknown-schema.trace.md");
+  const index = getStructureIndex({ references: [reference] });
+  const tree = getTreeProjection({ references: [reference] });
+  assert.equal(index.status, "unknown");
+  assert.equal(index.nodes[0]?.validationSummary.status, "unknown");
+  assert.equal(tree.status, "unknown");
+  assert.equal(tree.nodes[0]?.validationStatus, "unknown");
+});
+
 test("getAvailableActions returns transport-neutral actions from core policy", () => {
   const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "memes", "work", "remote", "001-1-echo-cloud-handoff.trace.md");
   const result = getAvailableActions({ reference, maxDepth: 1 });
@@ -340,6 +378,42 @@ test("getNodeChildren returns direct children with pagination support", () => {
   assert.deepEqual(result.missingOrUnreadableChildren, []);
 });
 
+test("tree view UX can orient entirely from projection outputs without owning core behavior", () => {
+  const artifactA = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "memes", "work", "remote", "001-1-echo-cloud-handoff.trace.md");
+  const artifactB = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "memes", "work", "remote", "001.trace.md");
+
+  const tree = getTreeProjection({ references: [artifactA, artifactB], sortBy: "label" });
+  assert.equal(tree.status, "incomplete");
+  assert.equal(tree.projectionShapeVersion, 1);
+  assert.equal(tree.totalNodes, 2);
+
+  const topicNode = tree.nodes.find((node) => node.schemaId === "tiinex.topic.v1");
+  const taskNode = tree.nodes.find((node) => node.schemaId === "tiinex.task.v1");
+  assert.ok(topicNode);
+  assert.ok(taskNode);
+  assert.equal(taskNode?.parentNodeId, topicNode?.nodeId);
+  assert.equal(topicNode?.childNodeIds.includes(taskNode!.nodeId), true);
+  assert.equal(taskNode?.hasOriginRecovery, true);
+  assert.equal(taskNode?.partialValidation, true);
+
+  const details = getNodeDetails({ references: [artifactA, artifactB], nodeId: taskNode!.nodeId });
+  assert.equal(details.status, "ok");
+  assert.equal(details.envelope?.currentSchema?.label, "tiinex.task.v1");
+  assert.equal(details.validationBasis?.governingSchemaId, "tiinex.task.v1");
+  assert.equal(typeof details.relevantBodySummary, "string");
+
+  const children = getNodeChildren({ references: [artifactA, artifactB], nodeId: topicNode!.nodeId, page: 1, pageSize: 10 });
+  assert.equal(children.status, "incomplete");
+  assert.equal(children.totalChildren, 1);
+  assert.equal(children.children[0]?.nodeId, taskNode?.nodeId);
+
+  const actions = getAvailableActions({ reference: artifactA, maxDepth: 1 });
+  assert.equal(actions.status, "ok");
+  assert.equal(actions.actions.some((entry) => entry.actionId === "open-parent" && entry.enabled), true);
+  assert.equal(actions.actions.some((entry) => entry.actionId === "copy-handoff" && entry.enabled), true);
+  assert.equal(actions.actions.some((entry) => entry.actionId === "copy-relevant-slice" && entry.enabled), true);
+});
+
 test("getNodeChildren still resolves a node that would be excluded by paginating the tree projection first", () => {
   const artifactA = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "memes", "work", "remote", "001-1-echo-cloud-handoff.trace.md");
   const artifactB = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "memes", "work", "remote", "001.trace.md");
@@ -359,4 +433,21 @@ test("resolveArtifact is explicit when a GitHub reference is not available throu
   assert.ok(result.compatibilityNotes?.includes("GitHub references are currently resolved via a local mirror, not by remote fetch."));
   assert.ok(result.source.warnings.includes("github-reference-requires-local-mirror"));
   assert.ok(result.source.warnings.includes("raw-content-not-remotely-fetched"));
+});
+
+test("tree projection preserves readability state separately from validation state", () => {
+  const reference = "https://github.com/Tiinex/not-a-real-local-mirror/blob/1234567/docs/example.trace.md";
+  const index = getStructureIndex({ references: [reference] });
+  const tree = getTreeProjection({ references: [reference] });
+
+  assert.equal(index.status, "blocked");
+  assert.equal(index.nodes[0]?.sourceAccessStatus, "not-found");
+  assert.equal(index.nodes[0]?.rawContentAvailability, "rendered-only");
+  assert.equal(index.nodes[0]?.renderedContentAvailability, true);
+
+  assert.equal(tree.status, "blocked");
+  assert.equal(tree.nodes[0]?.validationStatus, "blocked");
+  assert.equal(tree.nodes[0]?.sourceAccessStatus, "not-found");
+  assert.equal(tree.nodes[0]?.rawContentAvailability, "rendered-only");
+  assert.equal(tree.nodes[0]?.renderedContentAvailability, true);
 });

@@ -86,6 +86,9 @@ export function getStructureIndex(input: GetStructureIndexInput): GetStructureIn
           aliases: [...new Set([...(resolved.artifact.aliases ?? []), reference])]
         },
         primaryReference: reference,
+        sourceAccessStatus: resolved.source.accessStatus,
+        rawContentAvailability: resolved.source.rawContentAvailability,
+        renderedContentAvailability: resolved.source.renderedContentAvailability,
         schemaId: getSchemaId(envelope?.currentSchema),
         summary: envelope?.currentSummary,
         parentEdge: envelope?.parentTrace || envelope?.parentSchema
@@ -129,6 +132,8 @@ export function getStructureIndex(input: GetStructureIndexInput): GetStructureIn
       ? "invalid"
       : [...grouped.values()].some((node) => node.validationSummary.status === "blocked")
         ? "blocked"
+        : [...grouped.values()].some((node) => node.validationSummary.status === "unknown")
+          ? "unknown"
         : [...grouped.values()].some((node) => node.validationSummary.status === "incomplete")
           ? "incomplete"
           : "ok",
