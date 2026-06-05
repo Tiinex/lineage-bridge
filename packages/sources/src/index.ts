@@ -17,7 +17,7 @@ import {
 
 const GITHUB_BLOB_RE = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/(blob)\/([^/]+)\/(.+)$/iu;
 const GITHUB_RAW_RE = /^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/iu;
-const GITHUB_COMMIT_RE = /^[0-9a-f]{7,40}$/iu;
+const GITHUB_COMMIT_RE = /^[0-9a-f]{40}$/iu;
 
 interface ParsedGitHubReference {
   owner: string;
@@ -108,6 +108,13 @@ function classifyGitHubRefKind(revision: string): "commit" | "branch" {
   return GITHUB_COMMIT_RE.test(revision) ? "commit" : "branch";
 }
 
+function getGitHubRefBoundaryNotes(parsed: ParsedGitHubReference): string[] {
+  if (parsed.refKind === "commit") {
+    return [];
+  }
+  return ["Non-commit GitHub refs are currently treated as mutable branch-like refs until explicit tag resolution exists."];
+}
+
 function parseGitHubReference(reference: string): ParsedGitHubReference | undefined {
   const blobMatch = reference.match(GITHUB_BLOB_RE);
   const rawMatch = reference.match(GITHUB_RAW_RE);
@@ -160,6 +167,10 @@ function okSource(partial: Partial<ResolvedArtifactSource>): ResolvedArtifactSou
     exactValidationCapability: partial.exactValidationCapability ?? "unknown",
     exactValidationBlockedBySourceForm: partial.exactValidationBlockedBySourceForm ?? false,
     contentHash: partial.contentHash,
+    cachedContentUsed: partial.cachedContentUsed,
+    cacheBasis: partial.cacheBasis,
+    cacheTimestamp: partial.cacheTimestamp,
+    freshOriginVerified: partial.freshOriginVerified,
     rawContent: partial.rawContent,
     rawReadNeededForNextStep: partial.rawReadNeededForNextStep ?? false,
     warnings: partial.warnings ?? []
@@ -177,10 +188,129 @@ function getContractUpgradeNotes(input: ResolveArtifactInput, activeGitHubStrate
   if (input.sourceAccess?.network && activeGitHubStrategy === "scaffold") {
     notes.push("Remote network budget shapes are accepted for future source strategies but are not enforced by the current local scaffold.");
   }
-  if (input.sourceAccess?.freshOriginResolution) {
-    notes.push("Fresh origin resolution preference is declared but is not enforced before remote fetch and cache phases are implemented.");
+  if (input.sourceAccess?.freshOriginResolution && activeGitHubStrategy === "scaffold") {
+    notes.push("Fresh origin resolution preference is only enforced in remote GitHub fetch flows; current scaffold paths still use their existing local behavior.");
   }
   return notes;
+}
+
+function buildCachedFallbackResult(input: {
+  request: ResolveArtifactInput;
+  parsed: ParsedGitHubReference;
+  maxArtifactBytes: number;
+  failure: { status: BridgeTopLevelStatus; accessStatus: OriginAccessStatus; warning: string };
+  contractNotes: string[];
+  refBoundaryNotes: string[];
+}): ResolveArtifactResult | undefined {
+  const cachedFallback = input.request.sourceAccess?.cachedArtifactFallback;
+  if (!input.request.sourceAccess?.freshOriginResolution || !cachedFallback?.rawContent) {
+    return undefined;
+  }
+
+  const rawContent = cachedFallback.rawContent;
+  const truncated = Buffer.byteLength(rawContent, "utf8") > input.maxArtifactBytes;
+  const boundedContent = truncated ? rawContent.slice(0, input.maxArtifactBytes) : rawContent;
+  const outputRawContent = input.request.includeRawContent ? boundedContent : undefined;
+  const outputTruncated = input.request.includeRawContent ? truncated : false;
+  const contentHash = computeContentHash(rawContent);
+
+  return {
+    ...createOutputMetadata("resolveArtifact"),
+    compatibilityNotes: [
+      `Fresh origin fetch failed (${input.failure.warning}); cached fallback content is being used without fresh origin verification.`,
+      ...(!input.request.includeRawContent ? ["Raw source is omitted by default; request includeRawContent to access bounded raw content."] : []),
+      ...input.refBoundaryNotes,
+      ...input.contractNotes,
+      ...(cachedFallback.cacheBasis ? [`Cached fallback basis: ${cachedFallback.cacheBasis}.`] : [])
+    ],
+    status: "ok",
+    source: okSource({
+      sourceStrategy: "github-remote",
+      trustLevel: "remote-public",
+      refKind: input.parsed.refKind,
+      workspacePolicyEnforced: false,
+      originKind: input.parsed.originKind,
+      inputReference: input.request.reference,
+      normalizedReference: input.parsed.normalizedReference,
+      path: input.parsed.relativePath,
+      ref: input.parsed.revision,
+      versioned: true,
+      immutable: input.parsed.immutable,
+      mutability: input.parsed.mutability,
+      accessStatus: input.failure.accessStatus,
+      rawContentAvailability: "available",
+      renderedContentAvailability: input.parsed.renderedContentAvailability,
+      exactValidationCapability: "available",
+      exactValidationBlockedBySourceForm: false,
+      rawContent: outputRawContent,
+      contentHash,
+      cachedContentUsed: true,
+      cacheBasis: cachedFallback.cacheBasis,
+      cacheTimestamp: cachedFallback.cachedAt,
+      freshOriginVerified: false,
+      rawReadNeededForNextStep: !input.request.includeRawContent,
+      warnings: [input.failure.warning, "cached-fallback-used", "fresh-origin-unverified", ...(outputTruncated ? ["artifact-bytes-truncated"] : [])]
+    }),
+    artifact: createIdentity({
+      normalizedReference: input.parsed.normalizedReference,
+      immutableSourceIdentity: input.parsed.immutableSourceIdentity,
+      identityFamilyKey: input.parsed.identityFamilyKey,
+      contentHash,
+      provisional: false
+    }),
+    complete: !outputTruncated,
+    rawReadNeededForNextStep: !input.request.includeRawContent,
+    budgets: {
+      truncated: outputTruncated,
+      exhausted: outputTruncated ? ["maxArtifactBytes"] : []
+    }
+  };
+}
+
+function buildRemoteBudgetExhaustedResult(input: {
+  request: ResolveArtifactInput;
+  parsed: ParsedGitHubReference;
+  exhaustedKey: "maxFetches";
+  warning: string;
+  contractNotes: string[];
+  refBoundaryNotes: string[];
+}): ResolveArtifactResult {
+  return {
+    ...createOutputMetadata("resolveArtifact"),
+    compatibilityNotes: [...input.refBoundaryNotes, ...input.contractNotes],
+    status: "blocked",
+    source: okSource({
+      sourceStrategy: "github-remote",
+      trustLevel: "remote-public",
+      refKind: input.parsed.refKind,
+      workspacePolicyEnforced: false,
+      originKind: input.parsed.originKind,
+      inputReference: input.request.reference,
+      normalizedReference: input.parsed.normalizedReference,
+      path: input.parsed.relativePath,
+      ref: input.parsed.revision,
+      versioned: true,
+      immutable: input.parsed.immutable,
+      mutability: input.parsed.mutability,
+      accessStatus: "network-failure",
+      rawContentAvailability: input.parsed.renderedContentAvailability ? "rendered-only" : "unavailable",
+      renderedContentAvailability: input.parsed.renderedContentAvailability,
+      exactValidationCapability: "blocked",
+      exactValidationBlockedBySourceForm: true,
+      freshOriginVerified: false,
+      rawReadNeededForNextStep: true,
+      warnings: [input.warning]
+    }),
+    artifact: createIdentity({
+      normalizedReference: input.parsed.normalizedReference,
+      immutableSourceIdentity: input.parsed.immutableSourceIdentity,
+      identityFamilyKey: input.parsed.identityFamilyKey,
+      provisional: false
+    }),
+    complete: false,
+    rawReadNeededForNextStep: true,
+    budgets: { truncated: false, exhausted: [input.exhaustedKey] }
+  };
 }
 
 function isWithinRoot(candidatePath: string, rootPath: string): boolean {
@@ -259,6 +389,10 @@ function mapRemoteFailure(response: RemoteFetchResponse): { status: BridgeTopLev
     return { status: "blocked", accessStatus: "network-failure", warning: "github-remote-rate-limited" };
   }
   return { status: "blocked", accessStatus: "network-failure", warning: "github-remote-network-failure" };
+}
+
+function shouldRetryRemoteResponse(response: RemoteFetchResponse): boolean {
+  return response.ok !== true && (response.errorCode === "timeout" || response.errorCode === "network-failure");
 }
 
 async function defaultRemoteFetcher(request: RemoteFetchRequest): Promise<RemoteFetchResponse> {
@@ -434,6 +568,7 @@ function resolveGitHubReference(input: ResolveArtifactInput, maxArtifactBytes: n
   const localRepoCandidate = path.resolve(path.dirname(process.cwd()), parsed.repo);
   const localFileCandidate = path.resolve(localRepoCandidate, ...parsed.relativePath.split("/"));
   const contractNotes = getContractUpgradeNotes(input);
+  const refBoundaryNotes = getGitHubRefBoundaryNotes(parsed);
   try {
     const rawContent = readFileSync(localFileCandidate, "utf8");
     const truncated = Buffer.byteLength(rawContent, "utf8") > maxArtifactBytes;
@@ -471,6 +606,7 @@ function resolveGitHubReference(input: ResolveArtifactInput, maxArtifactBytes: n
       compatibilityNotes: [
         "GitHub references are currently resolved via a local mirror, not by remote fetch.",
         ...(!includeRawContent ? ["Raw source is omitted by default; request includeRawContent to access bounded raw content."] : []),
+        ...refBoundaryNotes,
         ...contractNotes
       ],
       status: "ok",
@@ -507,7 +643,7 @@ function resolveGitHubReference(input: ResolveArtifactInput, maxArtifactBytes: n
     });
     return {
       ...createOutputMetadata("resolveArtifact"),
-      compatibilityNotes: ["GitHub references are currently resolved via a local mirror, not by remote fetch.", ...contractNotes],
+      compatibilityNotes: ["GitHub references are currently resolved via a local mirror, not by remote fetch.", ...refBoundaryNotes, ...contractNotes],
       status: "blocked",
       source,
       artifact: createIdentity({ normalizedReference: parsed.normalizedReference, immutableSourceIdentity: parsed.immutableSourceIdentity, identityFamilyKey: parsed.identityFamilyKey, provisional: false }),
@@ -525,20 +661,66 @@ async function resolveGitHubReferenceRemotely(input: ResolveArtifactInput, maxAr
   }
 
   const remoteFetcher = input.sourceAccess?.remoteFetcher ?? defaultRemoteFetcher;
-  const response = await remoteFetcher({
-    url: parsed.rawFetchUrl,
-    timeoutMs: input.sourceAccess?.network?.requestTimeoutMs,
-    headers: {
-      accept: "text/plain, text/markdown;q=0.9, */*;q=0.1"
-    }
-  });
+  const refBoundaryNotes = getGitHubRefBoundaryNotes(parsed);
   const contractNotes = getContractUpgradeNotes(input, "remote");
+  const availableFetches = input.sourceAccess?.network?.maxFetches ?? 1;
+  const maxAttempts = Math.min(Math.max(1, (input.sourceAccess?.network?.retryCount ?? 0) + 1), Math.max(0, availableFetches));
+  if (availableFetches <= 0) {
+    return buildRemoteBudgetExhaustedResult({
+      request: input,
+      parsed,
+      exhaustedKey: "maxFetches",
+      warning: "github-remote-fetch-budget-exhausted",
+      contractNotes,
+      refBoundaryNotes
+    });
+  }
+  let response: RemoteFetchResponse | undefined;
+  let attemptCount = 0;
+  while (attemptCount < maxAttempts) {
+    attemptCount += 1;
+    response = await remoteFetcher({
+      url: parsed.rawFetchUrl,
+      timeoutMs: input.sourceAccess?.network?.requestTimeoutMs,
+      headers: {
+        accept: "text/plain, text/markdown;q=0.9, */*;q=0.1"
+      }
+    });
+    if (!shouldRetryRemoteResponse(response) || attemptCount >= maxAttempts) {
+      break;
+    }
+  }
+
+  if (!response) {
+    return buildRemoteBudgetExhaustedResult({
+      request: input,
+      parsed,
+      exhaustedKey: "maxFetches",
+      warning: "github-remote-fetch-budget-exhausted",
+      contractNotes,
+      refBoundaryNotes
+    });
+  }
 
   if (!response.ok || typeof response.bodyText !== "string") {
     const failure = mapRemoteFailure(response);
+    const cachedFallbackResult = buildCachedFallbackResult({
+      request: input,
+      parsed,
+      maxArtifactBytes,
+      failure,
+      contractNotes,
+      refBoundaryNotes
+    });
+    if (cachedFallbackResult) {
+      return cachedFallbackResult;
+    }
+    const exhausted = attemptCount >= availableFetches && shouldRetryRemoteResponse(response) && (input.sourceAccess?.network?.retryCount ?? 0) + 1 > availableFetches
+      ? ["maxFetches"]
+      : [];
     return {
       ...createOutputMetadata("resolveArtifact"),
-      compatibilityNotes: contractNotes.length > 0 ? contractNotes : undefined,
+      compatibilityNotes: [...refBoundaryNotes, ...contractNotes].length > 0 ? [...refBoundaryNotes, ...contractNotes] : undefined,
       status: failure.status,
       source: okSource({
         sourceStrategy: "github-remote",
@@ -559,7 +741,7 @@ async function resolveGitHubReferenceRemotely(input: ResolveArtifactInput, maxAr
         exactValidationCapability: "blocked",
         exactValidationBlockedBySourceForm: true,
         rawReadNeededForNextStep: true,
-        warnings: [failure.warning]
+        warnings: exhausted.length > 0 ? [failure.warning, "github-remote-fetch-budget-exhausted"] : [failure.warning]
       }),
       artifact: createIdentity({
         normalizedReference: parsed.normalizedReference,
@@ -569,7 +751,7 @@ async function resolveGitHubReferenceRemotely(input: ResolveArtifactInput, maxAr
       }),
       complete: false,
       rawReadNeededForNextStep: true,
-      budgets: { truncated: false, exhausted: [] }
+      budgets: { truncated: false, exhausted }
     };
   }
 
@@ -584,10 +766,12 @@ async function resolveGitHubReferenceRemotely(input: ResolveArtifactInput, maxAr
     ...createOutputMetadata("resolveArtifact"),
     compatibilityNotes: [
       ...(!input.includeRawContent ? ["Raw source is omitted by default; request includeRawContent to access bounded raw content."] : []),
+      ...refBoundaryNotes,
       ...contractNotes
     ].length > 0
       ? [
           ...(!input.includeRawContent ? ["Raw source is omitted by default; request includeRawContent to access bounded raw content."] : []),
+          ...refBoundaryNotes,
           ...contractNotes
         ]
       : undefined,
@@ -612,6 +796,8 @@ async function resolveGitHubReferenceRemotely(input: ResolveArtifactInput, maxAr
       exactValidationBlockedBySourceForm: false,
       rawContent: outputRawContent,
       contentHash,
+      cachedContentUsed: false,
+      freshOriginVerified: true,
       rawReadNeededForNextStep: !input.includeRawContent,
       warnings: outputTruncated ? ["artifact-bytes-truncated"] : []
     }),

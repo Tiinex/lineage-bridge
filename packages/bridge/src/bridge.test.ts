@@ -100,7 +100,7 @@ test("resolveArtifact accepts the M2 source contract upgrade inputs without chan
   assert.ok(result.compatibilityNotes?.includes("Workspace access policy is enforced for direct local artifact reads; broader local traversal hardening remains part of the sandbox phase."));
   assert.ok(result.compatibilityNotes?.includes("Remote GitHub fetch contract is declared but current resolution still uses the existing local mirror path."));
   assert.ok(result.compatibilityNotes?.includes("Remote network budget shapes are accepted for future source strategies but are not enforced by the current local scaffold."));
-  assert.ok(result.compatibilityNotes?.includes("Fresh origin resolution preference is declared but is not enforced before remote fetch and cache phases are implemented."));
+  assert.ok(result.compatibilityNotes?.includes("Fresh origin resolution preference is only enforced in remote GitHub fetch flows; current scaffold paths still use their existing local behavior."));
 });
 
 test("resolveArtifact blocks local reads outside configured workspace roots", () => {
@@ -305,6 +305,100 @@ test("resolveArtifactAsync maps remote GitHub fetch failure to structured source
   assert.ok(result.source.warnings.includes("github-remote-not-found"));
 });
 
+test("resolveArtifactAsync blocks remote GitHub fetch when maxFetches is exhausted", async () => {
+  const reference = "https://github.com/Tiinex/docs/blob/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001.trace.md";
+  const result = await resolveArtifactAsync({
+    reference,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      network: { maxFetches: 0 },
+      remoteFetcher: async () => ({ ok: true, status: 200, bodyText: "should-not-run" })
+    }
+  });
+
+  assert.equal(result.status, "blocked");
+  assert.ok(result.budgets.exhausted.includes("maxFetches"));
+  assert.ok(result.source.warnings.includes("github-remote-fetch-budget-exhausted"));
+});
+
+test("resolveArtifactAsync retries timeout failures conservatively within fetch budget", async () => {
+  const reference = "https://github.com/Tiinex/docs/blob/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001.trace.md";
+  const attempts: number[] = [];
+  const result = await resolveArtifactAsync({
+    reference,
+    includeRawContent: true,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      network: { maxFetches: 2, retryCount: 1, requestTimeoutMs: 900 },
+      remoteFetcher: async () => {
+        attempts.push(attempts.length + 1);
+        return attempts.length === 1
+          ? { ok: false, status: 0, errorCode: "timeout" }
+          : { ok: true, status: 200, bodyText: "retried-content" };
+      }
+    }
+  });
+
+  assert.equal(attempts.length, 2);
+  assert.equal(result.status, "ok");
+  assert.equal(result.source.rawContent, "retried-content");
+});
+
+test("resolveArtifactAsync does not retry rate-limited failures", async () => {
+  const reference = "https://github.com/Tiinex/docs/blob/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001.trace.md";
+  let attempts = 0;
+  const result = await resolveArtifactAsync({
+    reference,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      network: { maxFetches: 3, retryCount: 2 },
+      remoteFetcher: async () => {
+        attempts += 1;
+        return { ok: false, status: 429, errorCode: "rate-limited" };
+      }
+    }
+  });
+
+  assert.equal(attempts, 1);
+  assert.equal(result.status, "blocked");
+  assert.ok(result.source.warnings.includes("github-remote-rate-limited"));
+});
+
+test("resolveArtifactAsync uses cached fallback content when fresh remote origin resolution fails", async () => {
+  const reference = "https://github.com/Tiinex/docs/blob/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001.trace.md";
+  const cachedRaw = `# Continuity Context\n- Envelope Schema: [tiinex.root.v1](schema)\n- Current\n  - Current Schema: [tiinex.topic.v1](topic)\n  - Created At: 2026-06-06 00:00:00\n---\n# Cached Remote Topic\n\n## Current Read\n\nCached fallback content.\n`;
+
+  const result = await resolveArtifactAsync({
+    reference,
+    includeRawContent: true,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      freshOriginResolution: true,
+      cachedArtifactFallback: {
+        rawContent: cachedRaw,
+        cachedAt: "2026-06-06T12:00:00Z",
+        cacheBasis: "content-cache"
+      },
+      remoteFetcher: async () => ({ ok: false, status: 429, errorCode: "rate-limited" })
+    }
+  });
+
+  assert.equal(result.status, "ok");
+  assert.equal(result.source.sourceStrategy, "github-remote");
+  assert.equal(result.source.accessStatus, "network-failure");
+  assert.equal(result.source.rawContentAvailability, "available");
+  assert.equal(result.source.cachedContentUsed, true);
+  assert.equal(result.source.cacheBasis, "content-cache");
+  assert.equal(result.source.cacheTimestamp, "2026-06-06T12:00:00Z");
+  assert.equal(result.source.freshOriginVerified, false);
+  assert.ok(result.source.warnings.includes("github-remote-rate-limited"));
+  assert.ok(result.source.warnings.includes("cached-fallback-used"));
+  assert.ok(result.source.warnings.includes("fresh-origin-unverified"));
+  assert.equal(result.source.rawContent, cachedRaw);
+  assert.ok(result.compatibilityNotes?.includes("Fresh origin fetch failed (github-remote-rate-limited); cached fallback content is being used without fresh origin verification."));
+  assert.ok(result.compatibilityNotes?.includes("Cached fallback basis: content-cache."));
+});
+
 test("resolveArtifactAsync preserves maxArtifactBytes truncation rules for remote GitHub content", async () => {
   const reference = "https://raw.githubusercontent.com/Tiinex/docs/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001.trace.md";
   const rawBody = "0123456789abcdefghijklmnopqrstuvwxyz";
@@ -363,6 +457,7 @@ test("resolveArtifactAsync marks branch GitHub refs as mutable and content-cache
   assert.equal(blobResult.artifact.cacheIdentity.cacheScope, "content");
   assert.equal(blobResult.artifact.cacheIdentity.reason, "Only content-scoped caching is safe because the source identity is mutable or provisional.");
   assert.deepEqual(blobResult.artifact.identityInputsUsed, ["normalizedReference", "contentHash"]);
+  assert.ok(blobResult.compatibilityNotes?.includes("Non-commit GitHub refs are currently treated as mutable branch-like refs until explicit tag resolution exists."));
 });
 
 test("resolveArtifact marks local-mirror branch GitHub refs as mutable", () => {
@@ -376,6 +471,43 @@ test("resolveArtifact marks local-mirror branch GitHub refs as mutable", () => {
   assert.equal(result.source.mutability, "mutable");
   assert.equal(result.artifact.immutableSourceIdentity, undefined);
   assert.equal(result.artifact.cacheIdentity.cacheScope, "content");
+  assert.ok(result.compatibilityNotes?.includes("Non-commit GitHub refs are currently treated as mutable branch-like refs until explicit tag resolution exists."));
+});
+
+test("resolveArtifactAsync treats short SHA refs as branch-like mutable until a full commit SHA is available", async () => {
+  const revision = "1234567";
+  const reference = `https://github.com/Tiinex/docs/blob/${revision}/.topics/educational/001.trace.md`;
+  const result = await resolveArtifactAsync({
+    reference,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      remoteFetcher: async () => ({ ok: true, status: 200, bodyText: "short-sha-content" })
+    }
+  });
+
+  assert.equal(result.status, "ok");
+  assert.equal(result.source.refKind, "branch");
+  assert.equal(result.source.immutable, false);
+  assert.equal(result.artifact.immutableSourceIdentity, undefined);
+  assert.equal(result.artifact.cacheIdentity.cacheScope, "content");
+  assert.ok(result.compatibilityNotes?.includes("Non-commit GitHub refs are currently treated as mutable branch-like refs until explicit tag resolution exists."));
+});
+
+test("resolveArtifactAsync treats tag-like refs as branch-like mutable until explicit tag resolution exists", async () => {
+  const revision = "v1.2.3";
+  const reference = `https://github.com/Tiinex/docs/blob/${revision}/.topics/educational/001.trace.md`;
+  const result = await resolveArtifactAsync({
+    reference,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      remoteFetcher: async () => ({ ok: true, status: 200, bodyText: "tag-like-content" })
+    }
+  });
+
+  assert.equal(result.status, "ok");
+  assert.equal(result.source.refKind, "branch");
+  assert.equal(result.source.immutable, false);
+  assert.ok(result.compatibilityNotes?.includes("Non-commit GitHub refs are currently treated as mutable branch-like refs until explicit tag resolution exists."));
 });
 
 test("classifyAliasFamilies marks divergent node ids in one alias family as conflict", () => {
@@ -714,6 +846,57 @@ test("validateArtifactAsync stays incomplete when the governing schema cannot be
   assert.equal(result.validationBasis.governingSchemaContentHash, undefined);
   assert.equal(result.validationBasis.usedRawSource, true);
   assert.ok(result.findings.some((finding: { code: string }) => finding.code === "governing-schema-unresolved"));
+});
+
+test("validateArtifactAsync marks schema resolution incomplete when maxSchemaFetches is exhausted", async () => {
+  const reference = "https://github.com/Tiinex/docs/blob/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001.trace.md";
+  const artifactBody = `# Continuity Context\n- Envelope Schema: [tiinex.root.v1](../../../../.schemas/tiinex.root.v1.schema.md)\n- Current\n  - Current Schema: [tiinex.task.v1](../../../../.schemas/tiinex.task.v1.schema.md)\n  - Created At: 2026-06-06 00:00:00\n---\n# Remote Task\n\n## Objective\n\nRemote validation probe.\n\n## Done Criteria\n\nSchema budget proof.\n\n## Scope\n\nBounded test artifact.\n`;
+  const requests: string[] = [];
+
+  const result = await validateArtifactAsync({
+    reference,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      network: { maxFetches: 2, maxSchemaFetches: 0 },
+      remoteFetcher: async ({ url }: RemoteFetchRequest) => {
+        requests.push(url);
+        return url.endsWith("/001.trace.md")
+          ? { ok: true, status: 200, bodyText: artifactBody }
+          : { ok: true, status: 200, bodyText: "should-not-fetch-schema" };
+      }
+    }
+  });
+
+  assert.equal(result.status, "incomplete");
+  assert.equal(result.validationBasis.schemaResolutionComplete, false);
+  assert.ok(result.budgets.exhausted.includes("maxSchemaFetches"));
+  assert.deepEqual(requests, [
+    "https://raw.githubusercontent.com/Tiinex/docs/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001.trace.md"
+  ]);
+});
+
+test("validateArtifactAsync carries cached fallback and fresh-origin truth in validation basis", async () => {
+  const reference = "https://github.com/Tiinex/docs/blob/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001.trace.md";
+  const cachedRaw = `# Continuity Context\n- Envelope Schema: [tiinex.root.v1](schema)\n- Current\n  - Current Schema: [tiinex.topic.v1](topic)\n  - Created At: 2026-06-06 00:00:00\n---\n# Cached Remote Topic\n\n## Current Read\n\nCached fallback content.\n`;
+
+  const result = await validateArtifactAsync({
+    reference,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      freshOriginResolution: true,
+      cachedArtifactFallback: {
+        rawContent: cachedRaw,
+        cachedAt: "2026-06-06T12:00:00Z",
+        cacheBasis: "content-cache"
+      },
+      remoteFetcher: async () => ({ ok: false, status: 429, errorCode: "rate-limited" })
+    }
+  });
+
+  assert.equal(result.validationBasis.cachedContentUsed, true);
+  assert.equal(result.validationBasis.cacheBasis, "content-cache");
+  assert.equal(result.validationBasis.cacheTimestamp, "2026-06-06T12:00:00Z");
+  assert.equal(result.validationBasis.freshOriginVerified, false);
 });
 
 test("getSchemaContractAsync surfaces artifact-pinned versus schema-mutable risk", async () => {

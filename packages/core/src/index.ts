@@ -58,12 +58,19 @@ export interface RemoteFetchResponse {
 
 export type RemoteArtifactFetcher = (request: RemoteFetchRequest) => Promise<RemoteFetchResponse>;
 
+export interface CachedArtifactFallback {
+  rawContent: string;
+  cachedAt?: string;
+  cacheBasis?: string;
+}
+
 export interface SourceAccessOptions {
   preferredGitHubStrategy?: "auto" | "remote" | "local-mirror";
   freshOriginResolution?: boolean;
   workspace?: WorkspaceAccessPolicy;
   network?: SourceNetworkBudgetInput;
   remoteFetcher?: RemoteArtifactFetcher;
+  cachedArtifactFallback?: CachedArtifactFallback;
 }
 
 export interface BridgeOutputMetadata {
@@ -114,6 +121,10 @@ export interface ResolvedArtifactSource {
   exactValidationCapability: ExactValidationCapability;
   exactValidationBlockedBySourceForm: boolean;
   contentHash?: string;
+  cachedContentUsed?: boolean;
+  cacheBasis?: string;
+  cacheTimestamp?: string;
+  freshOriginVerified?: boolean;
   rawContent?: string;
   rawReadNeededForNextStep: boolean;
   warnings: string[];
@@ -185,6 +196,10 @@ export interface ValidationBasis {
   artifactOriginReference: string;
   artifactContentHash?: string;
   artifactRawSourceStatus: RawContentAvailability;
+  cachedContentUsed?: boolean;
+  cacheBasis?: string;
+  cacheTimestamp?: string;
+  freshOriginVerified?: boolean;
   governingSchemaId?: string;
   governingSchemaReference?: string;
   governingSchemaContentHash?: string;

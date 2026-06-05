@@ -43,6 +43,11 @@ Scope:
 
 Stop for review after M2 Leaf 1 before moving into actual remote fetch behavior.
 
+Current GitHub ref policy for the present M2 state:
+
+* full 40-character SHA refs are the only refs currently treated as immutable commit refs
+* non-commit refs, including short SHA and tag-like refs, are currently treated as mutable branch-like refs until explicit tag resolution exists
+
 Current progress:
 
 * [x] M2 Leaf 1 completed: source strategy metadata, remote fetch abstraction shape, workspace root config shape, timeout/retry/budget input shapes, and output compatibility are now represented in shared core and current source outputs without starting real remote fetch behavior.
@@ -53,6 +58,10 @@ Current progress:
 * [x] M2 Leaf 4.1 completed: async schema contract and validator surfaces now explicitly surface artifact-pinned versus schema-mutable risk, so a commit-pinned artifact that resolves its governing schema through a mutable branch reference stays visibly degraded instead of reading as fully stable.
 * [x] M2 Leaf 5 completed: direct local artifact reads now enforce configured workspace roots, local reads outside allowed roots can be blocked or explicitly allowed, and lineage plus action surfaces now carry the same workspace policy through parent traversal so path traversal outside the root is no longer silently followed.
 * [x] M2 Leaf 5.1 completed: local sandbox symlink policy now has executable host-side coverage, including strict link blocking and within-workspace blocking when a linked path resolves outside the allowed root.
+* [x] M2 Leaf 5.2 completed: milestone truth has been resynced to current test-backed progress, full 40-character SHA is now the only immutable commit form, and all other GitHub refs are explicitly treated as mutable branch-like refs until tag resolution exists.
+* [x] M2 Leaf 5.3 completed: fresh remote GitHub resolution can now degrade to explicit cached fallback when the fresh fetch fails, source output keeps the fresh-failure warning visible, and validation basis now reports cached-content use plus lack of fresh origin verification.
+* [x] M2 Leaf 5.4 completed: remote source access now enforces `maxFetches` before issuing remote GitHub fetches, async schema resolution consumes `maxSchemaFetches`, and budget exhaustion now surfaces as explicit blocked/incomplete budget state instead of silently proceeding as if another remote fetch were free.
+* [x] M2 Leaf 5.5 completed: remote retry policy is now explicit and conservative, retrying only timeout and network-failure cases within remaining fetch budget, while rate-limited and other non-retryable failures stop immediately; simulated timeout coverage is now part of the regression suite.
 
 ---
 
@@ -107,15 +116,15 @@ Do not start with instruction files, CLI polish, or agent behavior policy before
 
 Create a hardened source-access layer that can:
 
-* [ ] Resolve public GitHub artifact URLs remotely without requiring a local mirror.
-* [ ] Preserve local mirror support as an optimization or dev fallback.
-* [ ] Sandbox local file access behind explicit workspace roots.
-* [ ] Preserve canonical identity across equivalent GitHub blob/raw/source forms.
-* [ ] Report source trust, mutability, and versioning consistently.
-* [ ] Prevent path traversal from trace-controlled references.
-* [ ] Keep exact validation dependent on complete raw source only.
-* [ ] Preserve validation basis across remote/local source differences.
-* [ ] Expose cache-safe identity without hiding mutable-origin risk.
+* [x] Resolve public GitHub artifact URLs remotely without requiring a local mirror.
+* [x] Preserve local mirror support as an optimization or dev fallback.
+* [x] Sandbox local file access behind explicit workspace roots.
+* [x] Preserve canonical identity across equivalent GitHub blob/raw/source forms.
+* [x] Report source trust, mutability, and versioning consistently.
+* [x] Prevent path traversal from trace-controlled references.
+* [x] Keep exact validation dependent on complete raw source only.
+* [x] Preserve validation basis across remote/local source differences.
+* [x] Expose cache-safe identity without hiding mutable-origin risk.
 * [ ] Provide enough bridge-tool output that agents can use a preferred bridge-tool path over raw `.trace.md` reads by the end of Milestone 2.
 
 The final agent-preferred path requirement belongs to the Milestone 2 done-state.
@@ -153,14 +162,14 @@ The caller should not need to know which strategy produced the content except th
 
 DoD:
 
-* [ ] Source adapter contract remains transport-neutral.
-* [ ] GitHub remote fetch is implemented behind `packages/sources`.
-* [ ] GitHub local mirror fallback remains clearly identified as local mirror behavior.
-* [ ] Local workspace resolution is sandboxed.
-* [ ] All source strategies return the same core source shape.
-* [ ] Source strategy used is visible in output metadata or source warnings.
-* [ ] Source strategy differences do not change parent/origin semantics.
-* [ ] Source strategy differences do not bypass raw-source or truncation rules.
+* [x] Source adapter contract remains transport-neutral.
+* [x] GitHub remote fetch is implemented behind `packages/sources`.
+* [x] GitHub local mirror fallback remains clearly identified as local mirror behavior.
+* [x] Local workspace resolution is sandboxed.
+* [x] All source strategies return the same core source shape.
+* [x] Source strategy used is visible in output metadata or source warnings.
+* [x] Source strategy differences do not change parent/origin semantics.
+* [x] Source strategy differences do not bypass raw-source or truncation rules.
 
 ---
 
@@ -194,18 +203,18 @@ Remote GitHub fetch must distinguish:
 
 DoD:
 
-* [ ] Commit-pinned GitHub blob URLs can be fetched remotely.
-* [ ] Commit-pinned GitHub raw URLs can be fetched remotely.
-* [ ] Equivalent blob/raw URLs for the same commit/path produce the same immutable source identity.
-* [ ] Branch refs are marked mutable.
-* [ ] Commit refs are marked immutable.
-* [ ] Remote fetch reports source strategy as remote GitHub.
-* [ ] Remote fetch does not require a local sibling repo.
-* [ ] Remote fetch preserves `rawContent` opt-in behavior.
-* [ ] Remote fetch respects `maxArtifactBytes`.
+* [x] Commit-pinned GitHub blob URLs can be fetched remotely.
+* [x] Commit-pinned GitHub raw URLs can be fetched remotely.
+* [x] Equivalent blob/raw URLs for the same commit/path produce the same immutable source identity.
+* [x] Branch refs are marked mutable.
+* [x] Commit refs are marked immutable.
+* [x] Remote fetch reports source strategy as remote GitHub.
+* [x] Remote fetch does not require a local sibling repo.
+* [x] Remote fetch preserves `rawContent` opt-in behavior.
+* [x] Remote fetch respects `maxArtifactBytes`.
 * [ ] Remote fetch reports truncation without allowing exact validation over truncated content.
-* [ ] Remote fetch maps GitHub failure modes into structured source statuses.
-* [ ] Remote fetch failures do not become artifact validation failures.
+* [x] Remote fetch maps GitHub failure modes into structured source statuses.
+* [x] Remote fetch failures do not become artifact validation failures.
 
 ---
 
@@ -224,13 +233,13 @@ Rules:
 
 DoD:
 
-* [ ] Commit SHA refs produce `immutable: true`.
-* [ ] Branch refs produce `mutable` or equivalent non-immutable state.
+* [x] Commit SHA refs produce `immutable: true`.
+* [x] Branch refs produce `mutable` or equivalent non-immutable state.
 * [ ] Tag refs produce explicit versioned-but-not-proven-immutable state unless proven.
-* [ ] Validation basis exposes when artifact is immutable but schema reference is mutable.
+* [x] Validation basis exposes when artifact is immutable but schema reference is mutable.
 * [ ] Handoff packet preserves mutability warnings.
-* [ ] Cache identity never treats mutable branch content as immutable-origin cache.
-* [ ] Tests cover commit ref versus branch ref behavior.
+* [x] Cache identity never treats mutable branch content as immutable-origin cache.
+* [x] Tests cover commit ref versus branch ref behavior.
 
 ---
 
@@ -258,15 +267,15 @@ A readable artifact with an unreadable or unresolved schema should produce:
 
 DoD:
 
-* [ ] Relative schema paths from GitHub artifacts resolve against the same repo/ref context.
-* [ ] Commit-pinned artifact plus relative schema path preserves commit pinning.
+* [x] Relative schema paths from GitHub artifacts resolve against the same repo/ref context.
+* [x] Commit-pinned artifact plus relative schema path preserves commit pinning.
 * [ ] Branch artifact plus relative schema path is reported as mutable.
-* [ ] Absolute schema URLs are resolved as absolute sources.
-* [ ] Schema source metadata is included in validation basis.
-* [ ] Artifact-pinned/schema-mutable condition is surfaced.
-* [ ] Schema fetch failure results in incomplete validation.
-* [ ] Schema fetch failure does not erase envelope parsing when raw source is available and complete.
-* [ ] Artifact envelope parsing remains separate from schema validation failure.
+* [x] Absolute schema URLs are resolved as absolute sources.
+* [x] Schema source metadata is included in validation basis.
+* [x] Artifact-pinned/schema-mutable condition is surfaced.
+* [x] Schema fetch failure results in incomplete validation.
+* [x] Schema fetch failure does not erase envelope parsing when raw source is available and complete.
+* [x] Artifact envelope parsing remains separate from schema validation failure.
 
 ---
 
@@ -287,16 +296,16 @@ Rules:
 
 DoD:
 
-* [ ] Source adapter accepts configured workspace roots.
-* [ ] Local file reads outside allowed roots are blocked.
-* [ ] Parent trace resolution cannot escape allowed roots by `..`.
+* [x] Source adapter accepts configured workspace roots.
+* [x] Local file reads outside allowed roots are blocked.
+* [x] Parent trace resolution cannot escape allowed roots by `..`.
 * [ ] Origin recovery candidates cannot trigger arbitrary local reads.
-* [ ] Symlink policy is explicit.
-* [ ] Unsafe local path attempts produce structured blocked/unsupported status.
-* [ ] Blocked local path attempts do not throw uncaught errors.
-* [ ] Tests cover path traversal attempts.
-* [ ] Tests cover absolute path outside workspace.
-* [ ] Tests cover allowed local workspace reads.
+* [x] Symlink policy is explicit.
+* [x] Unsafe local path attempts produce structured blocked/unsupported status.
+* [x] Blocked local path attempts do not throw uncaught errors.
+* [x] Tests cover path traversal attempts.
+* [x] Tests cover absolute path outside workspace.
+* [x] Tests cover allowed local workspace reads.
 
 ---
 
@@ -327,17 +336,17 @@ The output must still report:
 
 DoD:
 
-* [ ] Remote GitHub source can produce cache-safe identity.
-* [ ] Cache key distinguishes immutable-origin cache from content-only cache.
-* [ ] Mutable sources are not cached as immutable origins.
-* [ ] Validation basis can show whether cached content was used.
-* [ ] Cache metadata does not replace source metadata.
-* [ ] Cache miss/fetch failure states are distinct.
-* [ ] Fresh fetch failure is still reported when cached fallback content is used.
-* [ ] Cached fallback does not claim fresh origin verification.
-* [ ] Tests cover immutable-origin cache identity.
-* [ ] Tests cover mutable branch non-immutable cache identity.
-* [ ] Tests cover fresh fetch failure with cached fallback.
+* [x] Remote GitHub source can produce cache-safe identity.
+* [x] Cache key distinguishes immutable-origin cache from content-only cache.
+* [x] Mutable sources are not cached as immutable origins.
+* [x] Validation basis can show whether cached content was used.
+* [x] Cache metadata does not replace source metadata.
+* [x] Cache miss/fetch failure states are distinct.
+* [x] Fresh fetch failure is still reported when cached fallback content is used.
+* [x] Cached fallback does not claim fresh origin verification.
+* [x] Tests cover immutable-origin cache identity.
+* [x] Tests cover mutable branch non-immutable cache identity.
+* [x] Tests cover fresh fetch failure with cached fallback.
 
 ---
 
@@ -358,16 +367,16 @@ Budget categories:
 
 DoD:
 
-* [ ] Remote fetch respects `maxArtifactBytes`.
-* [ ] Remote fetch reports truncation.
+* [x] Remote fetch respects `maxArtifactBytes`.
+* [x] Remote fetch reports truncation.
 * [ ] Remote fetch does not parse truncated source as complete.
-* [ ] Source adapter respects fetch count budgets.
-* [ ] Schema resolution respects schema fetch budgets.
-* [ ] Timeouts produce structured network/timeout status.
-* [ ] Retry policy is explicit and conservative.
-* [ ] Budget exhaustion is distinct from invalid artifact state.
-* [ ] Tests cover timeout or simulated timeout.
-* [ ] Tests cover fetch budget exhaustion.
+* [x] Source adapter respects fetch count budgets.
+* [x] Schema resolution respects schema fetch budgets.
+* [x] Timeouts produce structured network/timeout status.
+* [x] Retry policy is explicit and conservative.
+* [x] Budget exhaustion is distinct from invalid artifact state.
+* [x] Tests cover timeout or simulated timeout.
+* [x] Tests cover fetch budget exhaustion.
 
 ---
 
@@ -461,16 +470,16 @@ Use:
 
 DoD:
 
-* [ ] Unit tests use injectable fetcher or equivalent remote-source abstraction.
-* [ ] Remote GitHub parsing tests do not require network.
+* [x] Unit tests use injectable fetcher or equivalent remote-source abstraction.
+* [x] Remote GitHub parsing tests do not require network.
 * [ ] Optional live GitHub integration test is clearly marked.
-* [ ] Local sandbox tests use temporary directories.
-* [ ] Path traversal tests are included.
-* [ ] Truncation regression tests still pass.
-* [ ] Raw-output sanitation regression tests still pass.
-* [ ] Tree/handoff/relevant-slice tests still pass.
-* [ ] `npm run build` passes.
-* [ ] `npm test` passes.
+* [x] Local sandbox tests use temporary directories.
+* [x] Path traversal tests are included.
+* [x] Truncation regression tests still pass.
+* [x] Raw-output sanitation regression tests still pass.
+* [x] Tree/handoff/relevant-slice tests still pass.
+* [x] `npm run build` passes.
+* [x] `npm test` passes.
 
 ---
 
@@ -540,13 +549,13 @@ Do not start this phase until Phases 1–5 are stable and reviewed.
 
 Do not start optional live or broad integration tests until Phases 1–5 are stable and reviewed.
 
-* [ ] Remote GitHub URL works without local mirror.
-* [ ] Local workspace sandbox blocks unsafe reads.
-* [ ] Commit-pinned GitHub artifact produces immutable source identity.
-* [ ] Branch GitHub artifact is mutable.
-* [ ] Relative schema from commit-pinned GitHub artifact resolves against commit context.
-* [ ] Truncated remote raw source is not parsed as complete.
-* [ ] Fresh fetch failure with cached fallback remains visible as degraded state.
+* [x] Remote GitHub URL works without local mirror.
+* [x] Local workspace sandbox blocks unsafe reads.
+* [x] Commit-pinned GitHub artifact produces immutable source identity.
+* [x] Branch GitHub artifact is mutable.
+* [x] Relative schema from commit-pinned GitHub artifact resolves against commit context.
+* [x] Truncated remote raw source is not parsed as complete.
+* [x] Fresh fetch failure with cached fallback remains visible as degraded state.
 * [ ] Fresh chat can orient from remote GitHub artifact through bridge tools.
 
 ---
@@ -555,23 +564,23 @@ Do not start optional live or broad integration tests until Phases 1–5 are sta
 
 Milestone 2 is done when:
 
-* [ ] A public commit-pinned GitHub artifact can be resolved remotely without local mirror.
-* [ ] A public GitHub raw URL and blob URL for the same commit/path produce equivalent identity.
-* [ ] Branch refs are reported as mutable.
-* [ ] Commit refs are reported as immutable.
-* [ ] Relative schema links resolve correctly from GitHub artifact context.
-* [ ] Artifact/schema mutability mismatch is surfaced.
-* [ ] Artifact envelope parsing still works when schema fetch fails but artifact raw source is complete.
-* [ ] Local file reads are constrained by workspace roots.
-* [ ] Path traversal from trace content is blocked.
-* [ ] Remote fetch failures are structured and not confused with validation failures.
+* [x] A public commit-pinned GitHub artifact can be resolved remotely without local mirror.
+* [x] A public GitHub raw URL and blob URL for the same commit/path produce equivalent identity.
+* [x] Branch refs are reported as mutable.
+* [x] Commit refs are reported as immutable.
+* [x] Relative schema links resolve correctly from GitHub artifact context.
+* [x] Artifact/schema mutability mismatch is surfaced.
+* [x] Artifact envelope parsing still works when schema fetch fails but artifact raw source is complete.
+* [x] Local file reads are constrained by workspace roots.
+* [x] Path traversal from trace content is blocked.
+* [x] Remote fetch failures are structured and not confused with validation failures.
 * [ ] Remote source access respects budgets and truncation rules.
-* [ ] Cache identity is safe for immutable, mutable, and unsupported sources.
-* [ ] Cached fallback does not mask fresh fetch failure.
+* [x] Cache identity is safe for immutable, mutable, and unsupported sources.
+* [x] Cached fallback does not mask fresh fetch failure.
 * [ ] CLI exposes the new source behavior without owning source logic.
 * [ ] Agent-facing guidance prefers bridge tools over raw `.trace.md` reads without claiming to enforce sandboxing.
-* [ ] All Milestone 1 regression tests still pass.
-* [ ] New Milestone 2 tests pass.
+* [x] All Milestone 1 regression tests still pass.
+* [x] New Milestone 2 tests pass.
 
 ---
 

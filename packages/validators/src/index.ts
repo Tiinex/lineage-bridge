@@ -311,7 +311,30 @@ function hasSchemaMutabilityRisk(input: {
   return input.resolved.source.immutable === true && input.schemaResult?.source.versioned === true && input.schemaResult.source.immutable === false;
 }
 
-function buildValidationResult(input: ValidateArtifactInput, resolved: ResolveArtifactResult, schemaResult?: ResolveArtifactResult): ValidateArtifactResult {
+function consumeSchemaFetchNetworkBudget(input?: ValidateArtifactInput["sourceAccess"]): {
+  sourceAccess?: ValidateArtifactInput["sourceAccess"];
+  schemaBudgetExhausted: boolean;
+} {
+  if (!input?.network) {
+    return { sourceAccess: input, schemaBudgetExhausted: false };
+  }
+  if ((input.network.maxSchemaFetches ?? 1) <= 0) {
+    return { sourceAccess: input, schemaBudgetExhausted: true };
+  }
+  return {
+    schemaBudgetExhausted: false,
+    sourceAccess: {
+      ...input,
+      network: {
+        ...input.network,
+        maxSchemaFetches: input.network.maxSchemaFetches === undefined ? undefined : Math.max(0, input.network.maxSchemaFetches - 1),
+        maxFetches: input.network.maxFetches === undefined ? undefined : Math.max(0, input.network.maxFetches - 1)
+      }
+    }
+  };
+}
+
+function buildValidationResult(input: ValidateArtifactInput, resolved: ResolveArtifactResult, schemaResult?: ResolveArtifactResult, extraExhausted: string[] = []): ValidateArtifactResult {
   const source = stripRawContentFromSource(resolved.source);
   const compatibilityNotes = [
     ...(resolved.compatibilityNotes ?? []),
@@ -337,6 +360,10 @@ function buildValidationResult(input: ValidateArtifactInput, resolved: ResolveAr
         artifactOriginReference: resolved.source.inputReference,
         artifactContentHash: resolved.artifact.contentHash,
         artifactRawSourceStatus: resolved.source.rawContentAvailability,
+        cachedContentUsed: resolved.source.cachedContentUsed,
+        cacheBasis: resolved.source.cacheBasis,
+        cacheTimestamp: resolved.source.cacheTimestamp,
+        freshOriginVerified: resolved.source.freshOriginVerified,
         governingSchemaId: undefined,
         governingSchemaReference: undefined,
         governingSchemaContentHash: undefined,
@@ -372,6 +399,10 @@ function buildValidationResult(input: ValidateArtifactInput, resolved: ResolveAr
         artifactOriginReference: resolved.source.inputReference,
         artifactContentHash: resolved.artifact.contentHash,
         artifactRawSourceStatus: resolved.source.rawContentAvailability,
+        cachedContentUsed: resolved.source.cachedContentUsed,
+        cacheBasis: resolved.source.cacheBasis,
+        cacheTimestamp: resolved.source.cacheTimestamp,
+        freshOriginVerified: resolved.source.freshOriginVerified,
         governingSchemaId: undefined,
         governingSchemaReference: undefined,
         governingSchemaContentHash: undefined,
@@ -395,6 +426,7 @@ function buildValidationResult(input: ValidateArtifactInput, resolved: ResolveAr
   const schemaResolutionComplete = Boolean(schemaResult?.source.rawContent && !schemaResult.budgets.truncated);
   const governingSchemaContentHash = schemaResult?.artifact.contentHash;
   const schemaMutabilityRisk = hasSchemaMutabilityRisk({ resolved, schemaResult });
+  const exhausted = [...new Set([...resolved.budgets.exhausted, ...(schemaResult?.budgets.exhausted ?? []), ...extraExhausted])];
 
   if (!governingSchemaId) {
     return {
@@ -417,6 +449,10 @@ function buildValidationResult(input: ValidateArtifactInput, resolved: ResolveAr
         artifactOriginReference: resolved.source.inputReference,
         artifactContentHash: resolved.artifact.contentHash,
         artifactRawSourceStatus: resolved.source.rawContentAvailability,
+        cachedContentUsed: resolved.source.cachedContentUsed,
+        cacheBasis: resolved.source.cacheBasis,
+        cacheTimestamp: resolved.source.cacheTimestamp,
+        freshOriginVerified: resolved.source.freshOriginVerified,
         governingSchemaId: getSchemaId(envelope.currentSchema),
         governingSchemaReference,
         governingSchemaContentHash,
@@ -432,7 +468,7 @@ function buildValidationResult(input: ValidateArtifactInput, resolved: ResolveAr
       rawReadNeededForNextStep: false,
       budgets: {
         truncated: resolved.budgets.truncated || (schemaResult?.budgets.truncated ?? false),
-        exhausted: [...new Set([...resolved.budgets.exhausted, ...(schemaResult?.budgets.exhausted ?? [])])]
+        exhausted
       }
     };
   }
@@ -466,6 +502,10 @@ function buildValidationResult(input: ValidateArtifactInput, resolved: ResolveAr
       artifactOriginReference: resolved.source.inputReference,
       artifactContentHash: resolved.artifact.contentHash,
       artifactRawSourceStatus: resolved.source.rawContentAvailability,
+      cachedContentUsed: resolved.source.cachedContentUsed,
+      cacheBasis: resolved.source.cacheBasis,
+      cacheTimestamp: resolved.source.cacheTimestamp,
+      freshOriginVerified: resolved.source.freshOriginVerified,
       governingSchemaId,
       governingSchemaReference,
       governingSchemaContentHash,
@@ -481,7 +521,7 @@ function buildValidationResult(input: ValidateArtifactInput, resolved: ResolveAr
     rawReadNeededForNextStep: false,
     budgets: {
       truncated: resolved.budgets.truncated || (schemaResult?.budgets.truncated ?? false),
-      exhausted: [...new Set([...resolved.budgets.exhausted, ...(schemaResult?.budgets.exhausted ?? [])])]
+      exhausted
     }
   };
 }
@@ -502,8 +542,11 @@ export async function validateArtifactAsync(input: ValidateArtifactInput): Promi
   const schemaReference = resolved.source.rawContent
     ? resolveSchemaReference({ source: resolved.source, envelope: parseContinuityEnvelope(resolved.source.rawContent) })
     : undefined;
+  const schemaBudget = consumeSchemaFetchNetworkBudget(input.sourceAccess);
   const schemaResult = schemaReference
-    ? await resolveArtifactAsync({ reference: schemaReference, maxArtifactBytes: input.maxArtifactBytes, includeRawContent: true, sourceAccess: input.sourceAccess })
+    ? schemaBudget.schemaBudgetExhausted
+      ? undefined
+      : await resolveArtifactAsync({ reference: schemaReference, maxArtifactBytes: input.maxArtifactBytes, includeRawContent: true, sourceAccess: schemaBudget.sourceAccess })
     : undefined;
-  return buildValidationResult(input, resolved, schemaResult);
+  return buildValidationResult(input, resolved, schemaResult, schemaBudget.schemaBudgetExhausted ? ["maxSchemaFetches"] : []);
 }

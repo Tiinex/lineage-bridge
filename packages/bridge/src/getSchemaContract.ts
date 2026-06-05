@@ -54,6 +54,7 @@ function createUnresolvedResult(input: {
   envelope?: ContinuityEnvelope;
   schemaReference?: string;
   schemaResult?: ReturnType<typeof resolveArtifact>;
+  extraExhausted?: string[];
 }): GetSchemaContractResult {
   return {
     ...createOutputMetadata("getSchemaContract"),
@@ -72,7 +73,38 @@ function createUnresolvedResult(input: {
     },
     complete: false,
     rawReadNeededForNextStep: true,
-    budgets: input.schemaResult?.budgets ?? input.artifact.budgets
+    budgets: input.schemaResult
+      ? {
+          truncated: input.schemaResult.budgets.truncated || input.artifact.budgets.truncated,
+          exhausted: [...new Set([...input.artifact.budgets.exhausted, ...input.schemaResult.budgets.exhausted, ...(input.extraExhausted ?? [])])]
+        }
+      : {
+          truncated: input.artifact.budgets.truncated,
+          exhausted: [...new Set([...input.artifact.budgets.exhausted, ...(input.extraExhausted ?? [])])]
+        }
+  };
+}
+
+function consumeSchemaFetchNetworkBudget(input?: GetSchemaContractInput["sourceAccess"]): {
+  sourceAccess?: GetSchemaContractInput["sourceAccess"];
+  schemaBudgetExhausted: boolean;
+} {
+  if (!input?.network) {
+    return { sourceAccess: input, schemaBudgetExhausted: false };
+  }
+  if ((input.network.maxSchemaFetches ?? 1) <= 0) {
+    return { sourceAccess: input, schemaBudgetExhausted: true };
+  }
+  return {
+    schemaBudgetExhausted: false,
+    sourceAccess: {
+      ...input,
+      network: {
+        ...input.network,
+        maxSchemaFetches: input.network.maxSchemaFetches === undefined ? undefined : Math.max(0, input.network.maxSchemaFetches - 1),
+        maxFetches: input.network.maxFetches === undefined ? undefined : Math.max(0, input.network.maxFetches - 1)
+      }
+    }
   };
 }
 
@@ -144,12 +176,15 @@ export async function getSchemaContractAsync(input: GetSchemaContractInput): Pro
   const artifact = await resolveArtifactAsync({ ...input, includeRawContent: true });
   const envelope = artifact.source.rawContent ? parseContinuityEnvelope(artifact.source.rawContent) : undefined;
   const schemaReference = resolveSchemaReference({ source: artifact.source, envelope });
+  const schemaBudget = consumeSchemaFetchNetworkBudget(input.sourceAccess);
   const schemaResult = schemaReference
-    ? await resolveArtifactAsync({ reference: schemaReference, maxArtifactBytes: input.maxArtifactBytes, includeRawContent: true, sourceAccess: input.sourceAccess })
+    ? schemaBudget.schemaBudgetExhausted
+      ? undefined
+      : await resolveArtifactAsync({ reference: schemaReference, maxArtifactBytes: input.maxArtifactBytes, includeRawContent: true, sourceAccess: schemaBudget.sourceAccess })
     : undefined;
 
   if (!schemaResult?.source.rawContent) {
-    return createUnresolvedResult({ artifact, envelope, schemaReference, schemaResult });
+    return createUnresolvedResult({ artifact, envelope, schemaReference, schemaResult, extraExhausted: schemaBudget.schemaBudgetExhausted ? ["maxSchemaFetches"] : undefined });
   }
 
   return createResolvedResult({ artifact, schemaResult, includeFullContract: input.includeFullContract });
