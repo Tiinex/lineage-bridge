@@ -5,6 +5,26 @@ import { validateArtifact } from "@tiinex/lineage-bridge-validators";
 import { getLineage } from "./getLineage";
 import { getIntentionallyExcluded, selectRelevantSlices } from "./selectRelevantSlices";
 
+function deriveConsumerFacingSliceStatus(input: {
+  rawReadable: boolean;
+  selectedSliceCount: number;
+  validation: ReturnType<typeof validateArtifact>;
+}): GetRelevantSliceResult["status"] {
+  if (!input.rawReadable) {
+    return input.validation.status;
+  }
+  if (input.validation.status !== "ok") {
+    return input.validation.status;
+  }
+  if (input.selectedSliceCount === 0) {
+    return "incomplete";
+  }
+  if (input.validation.validationBasis.partialValidation || !input.validation.validationBasis.schemaResolutionComplete) {
+    return "incomplete";
+  }
+  return "ok";
+}
+
 export function getRelevantSlice(input: GetRelevantSliceInput): GetRelevantSliceResult {
   const resolved = resolveArtifact({ ...input, includeRawContent: true });
   const validation = validateArtifact(input);
@@ -18,11 +38,17 @@ export function getRelevantSlice(input: GetRelevantSliceInput): GetRelevantSlice
     parentSummary: lineage.nodes[1]?.summary,
     lineageStoppedBecause: lineage.stoppedBecause
   });
+  const status = deriveConsumerFacingSliceStatus({
+    rawReadable: Boolean(resolved.source.rawContent),
+    selectedSliceCount: selectedSlices.length,
+    validation
+  });
   const complete = Boolean(resolved.source.rawContent) && validation.complete && selectedSlices.length > 0;
 
   return {
     ...createOutputMetadata("getRelevantSlice"),
-    status: resolved.source.rawContent ? "ok" : validation.status,
+    compatibilityNotes: [...(validation.compatibilityNotes ?? [])],
+    status,
     purpose: input.purpose,
     artifact: {
       canonicalArtifactId: resolved.artifact.canonicalArtifactId,
@@ -35,6 +61,10 @@ export function getRelevantSlice(input: GetRelevantSliceInput): GetRelevantSlice
       aliases: resolved.artifact.aliases
     },
     selectedSlices,
+    directValidationState: validation.status,
+    partialValidation: validation.validationBasis.partialValidation,
+    exactValidationBlocked: validation.validationBasis.exactValidationBlocked,
+    schemaResolutionComplete: validation.validationBasis.schemaResolutionComplete,
     intentionallyExcluded: getIntentionallyExcluded({
       purpose: input.purpose,
       includeRawContent: Boolean(input.includeRawContent)

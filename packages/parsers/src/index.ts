@@ -149,24 +149,50 @@ export function parseContractSection(markdown: string, sectionName: ParsedContra
     sectionName,
     groups: [],
     duplicateGroupHeadings: [],
+    duplicateNamedDeclarations: [],
     categoriesMissingLists: [],
     unlabeledHyphenListLines: [],
     starBulletLines: [],
     unexpectedContentLines: []
   };
   const seenGroups = new Set<string>();
+  let seenNamedDeclarations = new Set<string>();
   let currentGroup: ParsedContractSection["groups"][number] | undefined;
   let currentCategory: ParsedContractSection["groups"][number]["categories"][number] | undefined;
+
+  let currentDeclarationName: string | undefined;
+  let currentDeclarationHasNestedFields = false;
+
+  function flushDeclaration(): void {
+    if (!currentGroup || !currentDeclarationName || !currentDeclarationHasNestedFields) {
+      currentDeclarationName = undefined;
+      currentDeclarationHasNestedFields = false;
+      return;
+    }
+    if (seenNamedDeclarations.has(currentDeclarationName)) {
+      result.duplicateNamedDeclarations.push({
+        groupHeading: currentGroup.heading,
+        declarationName: currentDeclarationName
+      });
+    } else {
+      seenNamedDeclarations.add(currentDeclarationName);
+    }
+    currentDeclarationName = undefined;
+    currentDeclarationHasNestedFields = false;
+  }
+
   for (let index = startIndex + 1; index < lines.length; index += 1) {
     const line = lines[index]!;
     const trimmed = line.trim();
     if (trimmed.startsWith("## ")) {
+      flushDeclaration();
       break;
     }
     if (!trimmed) {
       continue;
     }
     if (trimmed.startsWith("### ")) {
+      flushDeclaration();
       const heading = trimmed.slice(4).trim();
       if (seenGroups.has(heading)) {
         result.duplicateGroupHeadings.push(heading);
@@ -174,31 +200,49 @@ export function parseContractSection(markdown: string, sectionName: ParsedContra
       seenGroups.add(heading);
       currentGroup = { heading, categories: [] };
       result.groups.push(currentGroup);
+      seenNamedDeclarations = new Set<string>();
       currentCategory = undefined;
       continue;
     }
-    if (trimmed.startsWith("- ")) {
+    if (/^-\s+/u.test(line)) {
       if (!currentCategory) {
         result.unlabeledHyphenListLines.push(trimmed);
         continue;
       }
+      flushDeclaration();
+      currentDeclarationName = trimmed.slice(2).trim();
       currentCategory.items.push(trimmed.slice(2).trim());
       continue;
     }
+    if (/^(?: {2,}|\t+)-\s+/u.test(line)) {
+      if (currentDeclarationName) {
+        currentDeclarationHasNestedFields = true;
+      }
+      if (!currentCategory) {
+        result.unlabeledHyphenListLines.push(trimmed);
+        continue;
+      }
+      currentCategory.items.push(trimmed.replace(/^(?: {2,}|\t+)-\s+/u, "").trim());
+      continue;
+    }
     if (trimmed.startsWith("* ")) {
+      flushDeclaration();
       result.starBulletLines.push(trimmed);
       continue;
     }
     if (!currentGroup) {
+      flushDeclaration();
       result.unexpectedContentLines.push(trimmed);
       continue;
     }
+    flushDeclaration();
     if (currentCategory && currentCategory.items.length === 0) {
       result.categoriesMissingLists.push(currentCategory.label);
     }
     currentCategory = { label: trimmed, items: [] };
     currentGroup.categories.push(currentCategory);
   }
+  flushDeclaration();
   if (currentCategory && currentCategory.items.length === 0) {
     result.categoriesMissingLists.push(currentCategory.label);
   }

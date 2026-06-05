@@ -39,10 +39,11 @@ Implemented in repo now:
 * shared core result, identity, finding, validation-basis, budget, handoff-shape, and projection-shape types
 * first source adapter path for local files plus GitHub blob/raw references
 * universal continuity-envelope parsing without child-schema dependency
+* contract parsing now detects duplicate machine-readable group headings and duplicate named declarations in contract sections
 * initial shared `validateArtifact` support for `tiinex.root.v1`, `tiinex.topic.v1`, and `tiinex.task.v1`, now including minimal integrity/body-shape checks while remaining partial rather than full schema validation
 * bounded `getLineage` support with parent traversal, stopped reasons, cycle detection, depth/fetch budgets, and origin recovery candidates
 * compact `getHandoffPacket` support for fresh-chat orientation from shared core outputs
-* purpose-driven `getRelevantSlice` support with bounded slice selection, explicit exclusions, and optional raw-body inclusion
+* purpose-driven `getRelevantSlice` support with bounded slice selection, explicit exclusions, optional raw-body inclusion, and consumer-facing status that degrades when validation remains partial
 * first `getSchemaContract` support with compact contract summaries, authority surfaces, optional full contract output, and governing-schema resolution from ordinary artifacts
 * first thin CLI entry point under `apps/cli` that exposes shared core tools as JSON without adding parser or traversal logic of its own
 * build and regression tests for `resolveArtifact`, `readEnvelope`, `validateArtifact`, `getLineage`, `getHandoffPacket`, `getRelevantSlice`, and `getSchemaContract`
@@ -774,6 +775,8 @@ DoD:
 * [x] Does not return full raw artifact by default.
 * [x] Can request raw content explicitly when needed.
 * [x] Reports if slice was truncated due to budget.
+* [x] Exposes direct validation state separately from consumer-facing slice status.
+* [x] Consumer-facing slice status degrades when validation remains partial.
 
 ### `getHandoffPacket`
 
@@ -1469,7 +1472,7 @@ DoD:
 * [x] Implement or extract contract parser.
 * [x] Parse Schema Validation Contract.
 * [x] Parse Artifact Creation Contract when present.
-* [ ] Detect duplicate groups and declarations.
+* [x] Detect duplicate groups and declarations.
 * [x] Detect missing category lists.
 * [x] Detect star bullets in machine-authoritative surfaces.
 * [x] Detect unexpected machine contract content.

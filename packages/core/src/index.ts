@@ -165,6 +165,10 @@ export interface ParsedContractSection {
   sectionName: "Schema Validation Contract" | "Artifact Creation Contract";
   groups: ParsedContractGroup[];
   duplicateGroupHeadings: string[];
+  duplicateNamedDeclarations: Array<{
+    groupHeading: string;
+    declarationName: string;
+  }>;
   categoriesMissingLists: string[];
   unlabeledHyphenListLines: string[];
   starBulletLines: string[];
@@ -255,6 +259,10 @@ export interface GetRelevantSliceResult extends BridgeOutputMetadata {
   purpose: RelevantSlicePurpose;
   artifact: HandoffPacketArtifactSummary;
   selectedSlices: RelevantSlice[];
+  directValidationState: BridgeTopLevelStatus;
+  partialValidation: boolean;
+  exactValidationBlocked: boolean;
+  schemaResolutionComplete: boolean;
   intentionallyExcluded: string[];
   rawContent?: string;
   complete: boolean;

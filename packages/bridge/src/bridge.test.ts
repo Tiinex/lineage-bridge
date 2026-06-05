@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { getAvailableActions, getHandoffPacket, getLineage, getNodeChildren, getNodeDetails, getRelevantSlice, getSchemaContract, getStructureIndex, getTreeProjection, getValidationOverlay, parseContinuityEnvelope, readEnvelope, resolveArtifact, validateArtifact } from "./index";
+import { parseContractSection } from "@tiinex/lineage-bridge-parsers";
 import { classifyAliasFamilies, getAliasFamilyKey } from "./aliasFamilies";
 
 test("resolveArtifact reads a local Tiinex artifact", () => {
@@ -157,8 +158,13 @@ test("getHandoffPacket returns a compact packet for a fresh chat", () => {
 test("getRelevantSlice returns bounded handoff-oriented slices without raw body by default", () => {
   const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "memes", "work", "remote", "001-1-echo-cloud-handoff.trace.md");
   const result = getRelevantSlice({ reference, purpose: "handoff", maxDepth: 1 });
-  assert.equal(result.status, "ok");
+  assert.equal(result.status, "incomplete");
   assert.equal(result.purpose, "handoff");
+  assert.equal(result.directValidationState, "ok");
+  assert.equal(result.partialValidation, true);
+  assert.equal(result.exactValidationBlocked, false);
+  assert.equal(result.schemaResolutionComplete, true);
+  assert.ok(result.compatibilityNotes?.includes("initial validator coverage: continuity envelope plus minimal body-shape rules only"));
   assert.ok(result.selectedSlices.some((slice) => slice.label === "current-summary"));
   assert.ok(result.intentionallyExcluded.includes("full raw artifact body"));
   assert.equal(result.rawContent, undefined);
@@ -183,6 +189,41 @@ test("getSchemaContract resolves the governing schema from a task artifact", () 
   assert.equal(result.contract.unresolved, false);
   assert.ok(result.contract.schemaSourceReference?.includes("tiinex.task.v1.schema.md"));
   assert.ok(result.fullContract?.schemaValidationContract);
+});
+
+test("parseContractSection detects duplicate group headings and named declarations", () => {
+  const section = parseContractSection(`## Schema Validation Contract
+
+### Contract Category Extension
+Required When
+
+- a descendant schema introduces a contract category label.
+
+Entry Shape
+
+- Named Declaration
+
+Declarations
+
+- New Category
+  - Base Concept: Category Label
+  - Interpretation: first declaration
+- New Category
+  - Base Concept: Category Label
+  - Interpretation: duplicate declaration
+
+### Contract Category Extension
+Rules
+
+- repeated group heading
+`, "Schema Validation Contract");
+
+  assert.ok(section);
+  assert.deepEqual(section?.duplicateGroupHeadings, ["Contract Category Extension"]);
+  assert.deepEqual(section?.duplicateNamedDeclarations, [{
+    groupHeading: "Contract Category Extension",
+    declarationName: "New Category"
+  }]);
 });
 
 test("getValidationOverlay returns a UI-neutral validation summary", () => {
