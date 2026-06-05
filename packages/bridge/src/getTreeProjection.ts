@@ -46,6 +46,19 @@ function sortNodes(nodes: TreeProjectionNode[], sortBy: GetTreeProjectionInput["
   return copy;
 }
 
+function projectionStatus(nodes: TreeProjectionNode[]): GetTreeProjectionResult["status"] {
+  if (nodes.some((node) => node.validationStatus === "invalid")) {
+    return "invalid";
+  }
+  if (nodes.some((node) => node.validationStatus === "blocked")) {
+    return "blocked";
+  }
+  if (nodes.some((node) => node.validationStatus === "incomplete")) {
+    return "incomplete";
+  }
+  return "ok";
+}
+
 export function getTreeProjection(input: GetTreeProjectionInput): GetTreeProjectionResult {
   const index = getStructureIndex(input);
   const referenceToNodeId = new Map<string, string>();
@@ -73,6 +86,10 @@ export function getTreeProjection(input: GetTreeProjectionInput): GetTreeProject
       schemaId: node.schemaId,
       validationStatus: node.validationSummary.status,
       aggregateSeverity: node.validationSummary.aggregateSeverity,
+      partialValidation: node.validationSummary.partialValidation,
+      exactValidationBlocked: node.validationSummary.exactValidationBlocked,
+      schemaResolutionComplete: node.validationSummary.schemaResolutionComplete,
+      compatibilityNotes: [...node.validationSummary.compatibilityNotes],
       hasMissingParent: Boolean(node.parentEdge?.traceTarget) && !parentNodeId,
       hasOriginRecovery: node.originCandidates.length > 0,
       hasAliasOrDuplicateSignal: node.aliasCollapsed || node.aliasConflict
@@ -95,7 +112,8 @@ export function getTreeProjection(input: GetTreeProjectionInput): GetTreeProject
 
   return {
     ...createOutputMetadata("getTreeProjection"),
-    status: "ok",
+    compatibilityNotes: [...new Set(filtered.flatMap((node) => node.compatibilityNotes))],
+    status: projectionStatus(filtered),
     projectionShapeVersion: 1,
     totalNodes: filtered.length,
     nodes: paged,

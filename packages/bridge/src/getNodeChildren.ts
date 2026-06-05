@@ -8,7 +8,8 @@ export function getNodeChildren(input: GetNodeChildrenInput): GetNodeChildrenRes
     maxArtifacts: input.maxArtifacts,
     sortBy: input.sortBy
   });
-  const node = projection.nodes.find((entry) => entry.nodeId === input.nodeId);
+  const allNodes = projection.nodes;
+  const node = allNodes.find((entry) => entry.nodeId === input.nodeId);
   if (!node) {
     return {
       ...createOutputMetadata("getNodeChildren"),
@@ -24,7 +25,7 @@ export function getNodeChildren(input: GetNodeChildrenInput): GetNodeChildrenRes
     };
   }
 
-  const childNodes = projection.nodes.filter((entry) => node.childNodeIds.includes(entry.nodeId));
+  const childNodes = allNodes.filter((entry) => node.childNodeIds.includes(entry.nodeId));
   const pageSize = input.pageSize ?? childNodes.length ?? 1;
   const page = Math.max(1, input.page ?? 1);
   const start = (page - 1) * pageSize;
@@ -32,7 +33,8 @@ export function getNodeChildren(input: GetNodeChildrenInput): GetNodeChildrenRes
 
   return {
     ...createOutputMetadata("getNodeChildren"),
-    status: "ok",
+    compatibilityNotes: [...new Set(pagedChildren.flatMap((child) => child.compatibilityNotes))],
+    status: projection.status,
     nodeId: input.nodeId,
     projectionShapeVersion: 1,
     totalChildren: childNodes.length,

@@ -27,18 +27,31 @@ export function parseContinuityEnvelope(markdown: string): ContinuityEnvelope {
     if (!mode) {
       continue;
     }
+    if (trimmed === "---") {
+      mode = undefined;
+      continue;
+    }
     if (mode === "integrity") {
-      const methodMatch = trimmed.match(/^-\s+([^\s].*)$/u);
-      if (methodMatch && !envelope.integrity?.method) {
-        envelope.integrity = { method: methodMatch[1] };
-        continue;
-      }
       const towardsMatch = trimmed.match(/^-\s+Towards:\s+\[(.*?)\]\((.*?)\)$/u);
       if (towardsMatch) {
         envelope.integrity = {
           ...envelope.integrity,
           towards: { label: towardsMatch[1].trim(), target: towardsMatch[2].trim() }
         };
+        continue;
+      }
+      const towardsValueMatch = trimmed.match(/^-\s+Towards:\s+(.*)$/u);
+      if (towardsValueMatch) {
+        const target = towardsValueMatch[1].trim();
+        envelope.integrity = {
+          ...envelope.integrity,
+          towards: { label: target, target }
+        };
+        continue;
+      }
+      const methodMatch = trimmed.match(/^-[ ]+([^\s].*)$/u);
+      if (methodMatch && !envelope.integrity?.method) {
+        envelope.integrity = { method: methodMatch[1] };
         continue;
       }
       const valueMatch = trimmed.match(/^-\s+Value:\s+(.*)$/u);

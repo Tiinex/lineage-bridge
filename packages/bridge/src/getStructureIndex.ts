@@ -2,6 +2,17 @@ import { type ContinuityEnvelope, type GetStructureIndexInput, type GetStructure
 import { parseContinuityEnvelope } from "@tiinex/lineage-bridge-parsers";
 import { resolveArtifact } from "@tiinex/lineage-bridge-sources";
 import { validateArtifact } from "@tiinex/lineage-bridge-validators";
+import { applyAliasFamilyClassification, classifyAliasFamilies, getAliasFamilyKey, type AliasFamilyEntry } from "./aliasFamilies";
+
+function deriveSurfaceValidationStatus(validation: ReturnType<typeof validateArtifact>): StructureIndexNode["validationSummary"]["status"] {
+  if (validation.status !== "ok") {
+    return validation.status;
+  }
+  if (validation.validationBasis.partialValidation || !validation.validationBasis.schemaResolutionComplete) {
+    return "incomplete";
+  }
+  return "ok";
+}
 
 function getSchemaId(reference: ContinuityEnvelope["currentSchema"] | ContinuityEnvelope["parentSchema"]): string | undefined {
   return reference?.label ?? reference?.target;
@@ -17,7 +28,11 @@ function collectOriginCandidates(origin: ContinuityEnvelope["parentOrigin"] | Co
   return [...new Set(values)];
 }
 
-function aggregateSeverity(counts: StructureIndexNode["validationSummary"]["findingCounts"]): StructureIndexNode["validationSummary"]["aggregateSeverity"] {
+function collectRecoveryCandidates(envelope: ContinuityEnvelope | undefined): string[] {
+  return [...new Set([...collectOriginCandidates(envelope?.parentOrigin), ...collectOriginCandidates(envelope?.currentOrigin)])];
+}
+
+function aggregateSeverity(counts: StructureIndexNode["validationSummary"]["findingCounts"], validation: ReturnType<typeof validateArtifact>): StructureIndexNode["validationSummary"]["aggregateSeverity"] {
   if (counts.error > 0) {
     return "error";
   }
@@ -27,6 +42,9 @@ function aggregateSeverity(counts: StructureIndexNode["validationSummary"]["find
   if (counts.info > 0) {
     return "info";
   }
+  if (validation.validationBasis.partialValidation || !validation.validationBasis.schemaResolutionComplete || (validation.compatibilityNotes?.length ?? 0) > 0) {
+    return "warning";
+  }
   return "none";
 }
 
@@ -34,9 +52,10 @@ export function getStructureIndex(input: GetStructureIndexInput): GetStructureIn
   const maxArtifacts = input.maxArtifacts ?? 32;
   const exhausted: string[] = [];
   const grouped = new Map<string, StructureIndexNode>();
-  const aliasKeys = new Map<string, Set<string>>();
+  const aliasEntries: AliasFamilyEntry[] = [];
   let rawReadNeededForNextStep = false;
   let truncated = false;
+  const compatibilityNotes = new Set<string>();
 
   for (const reference of input.references.slice(0, maxArtifacts)) {
     const resolved = resolveArtifact({ reference, maxArtifactBytes: input.maxArtifactBytes });
@@ -45,15 +64,18 @@ export function getStructureIndex(input: GetStructureIndexInput): GetStructureIn
     truncated = truncated || resolved.budgets.truncated || validation.budgets.truncated;
     const envelope = resolved.source.rawContent ? parseContinuityEnvelope(resolved.source.rawContent) : undefined;
     const nodeId = resolved.artifact.canonicalArtifactId ?? resolved.source.normalizedReference ?? resolved.source.inputReference;
-    const aliasKey = resolved.source.normalizedReference ?? resolved.source.path ?? resolved.source.inputReference;
+    const aliasFamilyKey = getAliasFamilyKey({ artifact: resolved.artifact, source: resolved.source });
     const findingCounts: StructureIndexNode["validationSummary"]["findingCounts"] = {
       error: validation.findings.filter((finding) => finding.severity === "error").length,
       warning: validation.findings.filter((finding) => finding.severity === "warning").length,
       info: validation.findings.filter((finding) => finding.severity === "info").length
     };
+    const surfaceStatus = deriveSurfaceValidationStatus(validation);
+    for (const note of validation.compatibilityNotes ?? []) {
+      compatibilityNotes.add(note);
+    }
     const existing = grouped.get(nodeId);
     if (existing) {
-      existing.aliasCollapsed = true;
       existing.references = [...new Set([...existing.references, reference])];
       existing.artifact.aliases = [...new Set([...existing.artifact.aliases, ...(resolved.artifact.aliases ?? []), reference])];
     } else {
@@ -72,36 +94,29 @@ export function getStructureIndex(input: GetStructureIndexInput): GetStructureIn
               schemaId: getSchemaId(envelope.parentSchema)
             }
           : undefined,
-        originCandidates: collectOriginCandidates(envelope?.currentOrigin),
+        originCandidates: collectRecoveryCandidates(envelope),
         validationSummary: {
-          status: validation.status,
-          aggregateSeverity: aggregateSeverity(findingCounts),
+          status: surfaceStatus,
+          aggregateSeverity: aggregateSeverity(findingCounts, validation),
           findingCounts,
-          exactValidationBlocked: validation.validationBasis.exactValidationBlocked
+          partialValidation: validation.validationBasis.partialValidation,
+          exactValidationBlocked: validation.validationBasis.exactValidationBlocked,
+          schemaResolutionComplete: validation.validationBasis.schemaResolutionComplete,
+          compatibilityNotes: [...(validation.compatibilityNotes ?? [])]
         },
         aliasCollapsed: false,
         aliasConflict: false,
         references: [reference]
       });
     }
-    const seenForAlias = aliasKeys.get(aliasKey) ?? new Set<string>();
-    seenForAlias.add(nodeId);
-    aliasKeys.set(aliasKey, seenForAlias);
+    aliasEntries.push({
+      nodeId,
+      aliasFamilyKey,
+      alias: resolved.source.normalizedReference ?? resolved.source.path ?? resolved.source.inputReference
+    });
   }
 
-  for (const [aliasKey, nodeIds] of aliasKeys.entries()) {
-    if (nodeIds.size <= 1) {
-      continue;
-    }
-    for (const nodeId of nodeIds) {
-      const node = grouped.get(nodeId);
-      if (!node) {
-        continue;
-      }
-      node.aliasConflict = true;
-      node.artifact.aliases = [...new Set([...node.artifact.aliases, aliasKey])];
-    }
-  }
+  applyAliasFamilyClassification([...grouped.values()], classifyAliasFamilies(aliasEntries));
 
   if (input.references.length > maxArtifacts) {
     exhausted.push("maxArtifacts");
@@ -109,7 +124,14 @@ export function getStructureIndex(input: GetStructureIndexInput): GetStructureIn
 
   return {
     ...createOutputMetadata("getStructureIndex"),
-    status: "ok",
+    compatibilityNotes: [...compatibilityNotes],
+    status: [...grouped.values()].some((node) => node.validationSummary.status === "invalid")
+      ? "invalid"
+      : [...grouped.values()].some((node) => node.validationSummary.status === "blocked")
+        ? "blocked"
+        : [...grouped.values()].some((node) => node.validationSummary.status === "incomplete")
+          ? "incomplete"
+          : "ok",
     nodes: [...grouped.values()],
     complete: exhausted.length === 0,
     rawReadNeededForNextStep,

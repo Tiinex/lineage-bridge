@@ -32,6 +32,8 @@ export interface OperationalBudgetState {
 
 export interface ArtifactIdentity {
   canonicalArtifactId?: string;
+  immutableSourceIdentity?: string;
+  identityFamilyKey?: string;
   aliases: string[];
   identityInputsUsed: string[];
   identityConfidence: "high" | "medium" | "low";
@@ -277,7 +279,9 @@ export interface GetValidationOverlayResult extends BridgeOutputMetadata {
   findingCounts: Record<FindingSeverity, number>;
   directValidationState: BridgeTopLevelStatus;
   lineageValidationState?: "complete" | LineageStoppedBecause;
+  partialValidation: boolean;
   exactValidationBlocked: boolean;
+  schemaResolutionComplete: boolean;
   complete: boolean;
   rawReadNeededForNextStep: boolean;
   budgets: OperationalBudgetState;
@@ -320,7 +324,10 @@ export interface StructureIndexNode {
     status: BridgeTopLevelStatus;
     aggregateSeverity: "none" | FindingSeverity;
     findingCounts: Record<FindingSeverity, number>;
+    partialValidation: boolean;
     exactValidationBlocked: boolean;
+    schemaResolutionComplete: boolean;
+    compatibilityNotes: string[];
   };
   aliasCollapsed: boolean;
   aliasConflict: boolean;
@@ -345,6 +352,10 @@ export interface TreeProjectionNode {
   schemaId?: string;
   validationStatus: BridgeTopLevelStatus;
   aggregateSeverity: "none" | FindingSeverity;
+  partialValidation: boolean;
+  exactValidationBlocked: boolean;
+  schemaResolutionComplete: boolean;
+  compatibilityNotes: string[];
   hasMissingParent: boolean;
   hasOriginRecovery: boolean;
   hasAliasOrDuplicateSignal: boolean;

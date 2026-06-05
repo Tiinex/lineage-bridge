@@ -19,20 +19,38 @@ function computeContentHash(rawContent: string): string {
   return createHash("sha256").update(rawContent, "utf8").digest("base64url");
 }
 
-function createIdentity(normalizedReference: string | undefined, contentHash: string | undefined, provisional: boolean): ArtifactIdentity {
+function createIdentity(input: {
+  normalizedReference?: string;
+  immutableSourceIdentity?: string;
+  identityFamilyKey?: string;
+  contentHash?: string;
+  provisional: boolean;
+}): ArtifactIdentity {
+  const identityAnchor = input.immutableSourceIdentity ?? input.normalizedReference;
   return {
-    canonicalArtifactId: normalizedReference && contentHash
-      ? `sha256:${contentHash}:${normalizedReference}`
-      : normalizedReference,
-    aliases: normalizedReference ? [normalizedReference] : [],
+    canonicalArtifactId: identityAnchor && input.contentHash
+      ? `sha256:${input.contentHash}:${identityAnchor}`
+      : identityAnchor,
+    immutableSourceIdentity: input.immutableSourceIdentity,
+    identityFamilyKey: input.identityFamilyKey,
+    aliases: input.normalizedReference ? [input.normalizedReference] : [],
     identityInputsUsed: [
-      ...(normalizedReference ? ["normalizedReference"] : []),
-      ...(contentHash ? ["contentHash"] : [])
+      ...(input.immutableSourceIdentity ? ["immutableSourceIdentity"] : []),
+      ...(!input.immutableSourceIdentity && input.normalizedReference ? ["normalizedReference"] : []),
+      ...(input.contentHash ? ["contentHash"] : [])
     ],
-    identityConfidence: contentHash ? "high" : normalizedReference ? "medium" : "low",
-    contentHash,
-    provisional
+    identityConfidence: input.contentHash && identityAnchor ? "high" : identityAnchor ? "medium" : "low",
+    contentHash: input.contentHash,
+    provisional: input.provisional
   };
+}
+
+function createGitHubImmutableIdentity(owner: string, repo: string, revision: string, relativePath: string): string {
+  return `github:${owner.toLowerCase()}/${repo.toLowerCase()}@${revision}:${relativePath}`;
+}
+
+function createGitHubIdentityFamilyKey(owner: string, repo: string, relativePath: string): string {
+  return `github:${owner.toLowerCase()}/${repo.toLowerCase()}:${relativePath}`;
 }
 
 function okSource(partial: Partial<ResolvedArtifactSource>): ResolvedArtifactSource {
@@ -86,7 +104,7 @@ function resolveLocalFile(reference: string, maxArtifactBytes: number): ResolveA
       ...createOutputMetadata("resolveArtifact"),
       status: "ok",
       source,
-      artifact: createIdentity(normalizedPath, contentHash, true),
+      artifact: createIdentity({ normalizedReference: normalizedPath, identityFamilyKey: normalizedPath, contentHash, provisional: true }),
       complete: !truncated,
       rawReadNeededForNextStep: false,
       budgets: {
@@ -111,7 +129,7 @@ function resolveLocalFile(reference: string, maxArtifactBytes: number): ResolveA
       ...createOutputMetadata("resolveArtifact"),
       status: "unavailable",
       source,
-      artifact: createIdentity(normalizedPath, undefined, true),
+      artifact: createIdentity({ normalizedReference: normalizedPath, identityFamilyKey: normalizedPath, provisional: true }),
       complete: false,
       rawReadNeededForNextStep: true,
       budgets: { truncated: false, exhausted: [] }
@@ -133,6 +151,8 @@ function resolveGitHubReference(reference: string, maxArtifactBytes: number): Re
   const normalizedReference = blobMatch
     ? `https://github.com/${owner}/${repo}/blob/${revision}/${relativePath}`
     : `https://raw.githubusercontent.com/${owner}/${repo}/${revision}/${relativePath}`;
+  const immutableSourceIdentity = createGitHubImmutableIdentity(owner, repo, revision, relativePath);
+  const identityFamilyKey = createGitHubIdentityFamilyKey(owner, repo, relativePath);
   const localRepoCandidate = path.resolve(path.dirname(process.cwd()), repo);
   const localFileCandidate = path.resolve(localRepoCandidate, ...relativePath.split("/"));
   try {
@@ -163,9 +183,10 @@ function resolveGitHubReference(reference: string, maxArtifactBytes: number): Re
     });
     return {
       ...createOutputMetadata("resolveArtifact"),
+      compatibilityNotes: ["GitHub references are currently resolved via a local mirror, not by remote fetch."],
       status: "ok",
       source,
-      artifact: createIdentity(normalizedReference, contentHash, false),
+      artifact: createIdentity({ normalizedReference, immutableSourceIdentity, identityFamilyKey, contentHash, provisional: false }),
       complete: !truncated,
       rawReadNeededForNextStep: false,
       budgets: {
@@ -189,13 +210,14 @@ function resolveGitHubReference(reference: string, maxArtifactBytes: number): Re
       exactValidationCapability: "blocked",
       exactValidationBlockedBySourceForm: true,
       rawReadNeededForNextStep: true,
-      warnings: ["raw-content-not-locally-resolved"]
+      warnings: ["github-reference-requires-local-mirror", "raw-content-not-remotely-fetched"]
     });
     return {
       ...createOutputMetadata("resolveArtifact"),
-      status: blobMatch ? "blocked" : "unavailable",
+      compatibilityNotes: ["GitHub references are currently resolved via a local mirror, not by remote fetch."],
+      status: "blocked",
       source,
-      artifact: createIdentity(normalizedReference, undefined, false),
+      artifact: createIdentity({ normalizedReference, immutableSourceIdentity, identityFamilyKey, provisional: false }),
       complete: false,
       rawReadNeededForNextStep: true,
       budgets: { truncated: false, exhausted: [] }
@@ -223,7 +245,7 @@ export function resolveArtifact(input: ResolveArtifactInput): ResolveArtifactRes
         exactValidationBlockedBySourceForm: false,
         rawReadNeededForNextStep: true
       }),
-      artifact: createIdentity(undefined, undefined, true),
+      artifact: createIdentity({ provisional: true }),
       complete: false,
       rawReadNeededForNextStep: true,
       budgets: { truncated: false, exhausted: [] }

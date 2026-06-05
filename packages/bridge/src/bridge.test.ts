@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { getAvailableActions, getHandoffPacket, getLineage, getNodeChildren, getNodeDetails, getRelevantSlice, getSchemaContract, getStructureIndex, getTreeProjection, getValidationOverlay, readEnvelope, resolveArtifact, validateArtifact } from "./index";
+import { getAvailableActions, getHandoffPacket, getLineage, getNodeChildren, getNodeDetails, getRelevantSlice, getSchemaContract, getStructureIndex, getTreeProjection, getValidationOverlay, parseContinuityEnvelope, readEnvelope, resolveArtifact, validateArtifact } from "./index";
+import { classifyAliasFamilies, getAliasFamilyKey } from "./aliasFamilies";
 
 test("resolveArtifact reads a local Tiinex artifact", () => {
   const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "kickstarter", "001.trace.md");
@@ -10,6 +11,38 @@ test("resolveArtifact reads a local Tiinex artifact", () => {
   assert.equal(result.source.accessStatus, "readable");
   assert.equal(result.source.rawContentAvailability, "available");
   assert.ok(result.artifact.canonicalArtifactId);
+  assert.equal(result.compatibilityNotes, undefined);
+  assert.ok(result.source.warnings.every((warning) => !warning.includes("local-mirror")));
+});
+
+test("resolveArtifact collapses equivalent GitHub blob and raw references onto the same canonical artifact id", () => {
+  const revision = "291c00f4aaba1e1ba5a0c3479c078070a83c060e";
+  const relativePath = ".topics/educational/memes/work/remote/001.trace.md";
+  const blobReference = `https://github.com/Tiinex/docs/blob/${revision}/${relativePath}`;
+  const rawReference = `https://raw.githubusercontent.com/Tiinex/docs/${revision}/${relativePath}`;
+  const blobResult = resolveArtifact({ reference: blobReference });
+  const rawResult = resolveArtifact({ reference: rawReference });
+  assert.equal(blobResult.status, "ok");
+  assert.equal(rawResult.status, "ok");
+  assert.equal(blobResult.artifact.canonicalArtifactId, rawResult.artifact.canonicalArtifactId);
+  assert.deepEqual(blobResult.artifact.identityInputsUsed, ["immutableSourceIdentity", "contentHash"]);
+  assert.deepEqual(rawResult.artifact.identityInputsUsed, ["immutableSourceIdentity", "contentHash"]);
+  assert.equal(blobResult.artifact.immutableSourceIdentity, rawResult.artifact.immutableSourceIdentity);
+});
+
+test("classifyAliasFamilies marks divergent node ids in one alias family as conflict", () => {
+  const classification = classifyAliasFamilies([
+    { nodeId: "node-a", aliasFamilyKey: "github:tiinex/docs:.topics/example.md", alias: "https://github.com/Tiinex/docs/blob/abc/.topics/example.md" },
+    { nodeId: "node-b", aliasFamilyKey: "github:tiinex/docs:.topics/example.md", alias: "https://raw.githubusercontent.com/Tiinex/docs/def/.topics/example.md" }
+  ]);
+  assert.equal(classification.conflictNodeIds.has("node-a"), true);
+  assert.equal(classification.conflictNodeIds.has("node-b"), true);
+  assert.equal(classification.collapsedNodeIds.has("node-a"), false);
+});
+
+test("getAliasFamilyKey prefers identity family key when available", () => {
+  const resolved = resolveArtifact({ reference: "https://github.com/Tiinex/docs/blob/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001.trace.md" });
+  assert.equal(getAliasFamilyKey({ artifact: resolved.artifact, source: resolved.source }), resolved.artifact.identityFamilyKey);
 });
 
 test("readEnvelope parses continuity envelope from a local Tiinex artifact", () => {
@@ -19,6 +52,25 @@ test("readEnvelope parses continuity envelope from a local Tiinex artifact", () 
   assert.equal(result.envelope?.currentSchema?.label, "tiinex.pointer.v1");
   assert.equal(result.envelope?.integrity?.method, "sha256-base64url-c14n-v1");
   assert.ok(result.envelope?.currentOrigin?.browseGit?.includes("github.com/Tiinex/.github/blob/"));
+});
+
+test("parseContinuityEnvelope stops at the first body boundary and supports plain Towards values", () => {
+  const envelope = parseContinuityEnvelope(`# Continuity Context
+- Envelope Schema: [tiinex.root.v1](schema)
+- Current
+  - Current Schema: [tiinex.topic.v1](topic)
+  - Created At: 2026-06-05T00:00:00Z
+  - Summary: Before body
+# Continuity Integrity
+- sha256-base64url-c14n-v1
+- Towards: self
+- Value: abc123
+---
+- Summary: Should not overwrite
+`);
+  assert.equal(envelope.currentSummary, "Before body");
+  assert.equal(envelope.integrity?.towards?.target, "self");
+  assert.equal(envelope.unknownEnvelopeFields.some((entry) => entry.value.includes("Should not overwrite")), false);
 });
 
 test("validateArtifact returns ok for a known topic artifact", () => {
@@ -104,13 +156,16 @@ test("getSchemaContract resolves the governing schema from a task artifact", () 
 test("getValidationOverlay returns a UI-neutral validation summary", () => {
   const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "memes", "work", "remote", "001-1-echo-cloud-handoff.trace.md");
   const result = getValidationOverlay({ reference, maxDepth: 1 });
-  assert.equal(result.status, "ok");
-  assert.equal(result.aggregateSeverity, "none");
+  assert.equal(result.status, "incomplete");
+  assert.equal(result.aggregateSeverity, "warning");
   assert.equal(result.findingCounts.error, 0);
   assert.equal(result.findingCounts.warning, 0);
   assert.equal(result.directValidationState, "ok");
   assert.equal(result.lineageValidationState, "max-depth");
+  assert.equal(result.partialValidation, true);
   assert.equal(result.exactValidationBlocked, false);
+  assert.equal(result.schemaResolutionComplete, true);
+  assert.ok(result.compatibilityNotes?.includes("initial validator coverage: continuity envelope only"));
 });
 
 test("getAvailableActions returns transport-neutral actions from core policy", () => {
@@ -129,22 +184,48 @@ test("getStructureIndex returns a bounded deduped index with parent and validati
   const artifactA = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "memes", "work", "remote", "001-1-echo-cloud-handoff.trace.md");
   const artifactB = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "memes", "work", "remote", "001.trace.md");
   const result = getStructureIndex({ references: [artifactA, artifactB, artifactA], maxArtifacts: 8 });
-  assert.equal(result.status, "ok");
+  assert.equal(result.status, "incomplete");
   assert.equal(result.nodes.length, 2);
   const taskNode = result.nodes.find((node) => node.schemaId === "tiinex.task.v1");
   assert.ok(taskNode);
   assert.equal(taskNode?.aliasCollapsed, true);
-  assert.equal(taskNode?.validationSummary.status, "ok");
-  assert.equal(taskNode?.validationSummary.aggregateSeverity, "none");
+  assert.equal(taskNode?.validationSummary.status, "incomplete");
+  assert.equal(taskNode?.validationSummary.aggregateSeverity, "warning");
+  assert.equal(taskNode?.validationSummary.partialValidation, true);
+  assert.equal(taskNode?.validationSummary.schemaResolutionComplete, true);
   assert.equal(taskNode?.parentEdge?.traceTarget, "001.trace.md");
   assert.ok(Array.isArray(taskNode?.originCandidates));
+});
+
+test("getStructureIndex collapses equivalent GitHub blob and raw references when identity evidence matches", () => {
+  const revision = "291c00f4aaba1e1ba5a0c3479c078070a83c060e";
+  const relativePath = ".topics/educational/memes/work/remote/001.trace.md";
+  const blobReference = `https://github.com/Tiinex/docs/blob/${revision}/${relativePath}`;
+  const rawReference = `https://raw.githubusercontent.com/Tiinex/docs/${revision}/${relativePath}`;
+  const result = getStructureIndex({ references: [blobReference, rawReference] });
+  assert.equal(result.nodes.length, 1);
+  assert.equal(result.nodes[0]?.aliasCollapsed, true);
+  assert.equal(result.nodes[0]?.aliasConflict, false);
+  assert.equal(result.nodes[0]?.references.length, 2);
+  assert.ok(result.nodes[0]?.artifact.aliases.includes(blobReference));
+  assert.ok(result.nodes[0]?.artifact.aliases.includes(rawReference));
+});
+
+test("getStructureIndex marks alias conflict when similar GitHub aliases point at different revisions", () => {
+  const relativePath = ".topics/educational/memes/work/remote/001.trace.md";
+  const firstReference = `https://github.com/Tiinex/docs/blob/291c00f4aaba1e1ba5a0c3479c078070a83c060e/${relativePath}`;
+  const secondReference = `https://raw.githubusercontent.com/Tiinex/docs/f76e424f7e5e0628efe04226a5ed97425a1301cb/${relativePath}`;
+  const result = getStructureIndex({ references: [firstReference, secondReference] });
+  assert.equal(result.nodes.length, 2);
+  assert.equal(result.nodes.every((node) => node.aliasConflict), true);
+  assert.equal(result.nodes.some((node) => node.aliasCollapsed), false);
 });
 
 test("getTreeProjection returns stable UI-neutral nodes with parent-child links", () => {
   const artifactA = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "memes", "work", "remote", "001-1-echo-cloud-handoff.trace.md");
   const artifactB = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "memes", "work", "remote", "001.trace.md");
   const result = getTreeProjection({ references: [artifactA, artifactB], sortBy: "label" });
-  assert.equal(result.status, "ok");
+  assert.equal(result.status, "incomplete");
   assert.equal(result.projectionShapeVersion, 1);
   assert.equal(result.totalNodes, 2);
   const topicNode = result.nodes.find((node) => node.schemaId === "tiinex.topic.v1");
@@ -153,6 +234,8 @@ test("getTreeProjection returns stable UI-neutral nodes with parent-child links"
   assert.ok(taskNode);
   assert.equal(taskNode?.parentNodeId, topicNode?.nodeId);
   assert.ok(topicNode?.childNodeIds.includes(taskNode!.nodeId));
+  assert.equal(taskNode?.partialValidation, true);
+  assert.equal(taskNode?.schemaResolutionComplete, true);
   assert.equal(taskNode?.hasMissingParent, false);
   assert.equal(taskNode?.hasOriginRecovery, true);
 });
@@ -177,9 +260,17 @@ test("getNodeChildren returns direct children with pagination support", () => {
   const topicNode = projection.nodes.find((node) => node.schemaId === "tiinex.topic.v1");
   assert.ok(topicNode);
   const result = getNodeChildren({ references: [artifactA, artifactB], nodeId: topicNode!.nodeId, page: 1, pageSize: 1 });
-  assert.equal(result.status, "ok");
+  assert.equal(result.status, "incomplete");
   assert.equal(result.totalChildren, 1);
   assert.equal(result.children.length, 1);
   assert.equal(result.children[0]?.schemaId, "tiinex.task.v1");
   assert.deepEqual(result.missingOrUnreadableChildren, []);
+});
+
+test("resolveArtifact is explicit when a GitHub reference is not available through the local mirror", () => {
+  const result = resolveArtifact({ reference: "https://github.com/Tiinex/not-a-real-local-mirror/blob/1234567/docs/example.trace.md" });
+  assert.equal(result.status, "blocked");
+  assert.ok(result.compatibilityNotes?.includes("GitHub references are currently resolved via a local mirror, not by remote fetch."));
+  assert.ok(result.source.warnings.includes("github-reference-requires-local-mirror"));
+  assert.ok(result.source.warnings.includes("raw-content-not-remotely-fetched"));
 });

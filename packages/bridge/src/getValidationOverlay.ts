@@ -2,7 +2,17 @@ import { type GetValidationOverlayInput, type GetValidationOverlayResult, create
 import { validateArtifact } from "@tiinex/lineage-bridge-validators";
 import { getLineage } from "./getLineage";
 
-function getAggregateSeverity(counts: GetValidationOverlayResult["findingCounts"]): GetValidationOverlayResult["aggregateSeverity"] {
+function deriveSurfaceValidationState(validation: ReturnType<typeof validateArtifact>): GetValidationOverlayResult["status"] {
+  if (validation.status !== "ok") {
+    return validation.status;
+  }
+  if (validation.validationBasis.partialValidation || !validation.validationBasis.schemaResolutionComplete) {
+    return "incomplete";
+  }
+  return "ok";
+}
+
+function getAggregateSeverity(counts: GetValidationOverlayResult["findingCounts"], validation: ReturnType<typeof validateArtifact>): GetValidationOverlayResult["aggregateSeverity"] {
   if (counts.error > 0) {
     return "error";
   }
@@ -11,6 +21,9 @@ function getAggregateSeverity(counts: GetValidationOverlayResult["findingCounts"
   }
   if (counts.info > 0) {
     return "info";
+  }
+  if (validation.validationBasis.partialValidation || !validation.validationBasis.schemaResolutionComplete || (validation.compatibilityNotes?.length ?? 0) > 0) {
+    return "warning";
   }
   return "none";
 }
@@ -26,12 +39,15 @@ export function getValidationOverlay(input: GetValidationOverlayInput): GetValid
 
   return {
     ...createOutputMetadata("getValidationOverlay"),
-    status: validation.status,
-    aggregateSeverity: getAggregateSeverity(findingCounts),
+    compatibilityNotes: [...(validation.compatibilityNotes ?? [])],
+    status: deriveSurfaceValidationState(validation),
+    aggregateSeverity: getAggregateSeverity(findingCounts, validation),
     findingCounts,
     directValidationState: validation.status,
     lineageValidationState: lineage ? (lineage.complete ? "complete" : lineage.stoppedBecause) : undefined,
+    partialValidation: validation.validationBasis.partialValidation,
     exactValidationBlocked: validation.validationBasis.exactValidationBlocked,
+    schemaResolutionComplete: validation.validationBasis.schemaResolutionComplete,
     complete: validation.complete && (lineage ? lineage.complete : true),
     rawReadNeededForNextStep: validation.rawReadNeededForNextStep || Boolean(lineage?.rawReadNeededForNextStep),
     budgets: {

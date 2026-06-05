@@ -49,11 +49,12 @@ Implemented in repo now:
 * first UI-neutral projection slices for `getValidationOverlay` and `getAvailableActions`
 * first `getStructureIndex` projection with canonical-id dedupe, parent edges, origin candidates, validation summaries, and bounded explicit-reference indexing
 * first `getTreeProjection`, `getNodeDetails`, and `getNodeChildren` projections built as thin layers above the shared index and envelope/validation outputs
+* GitHub blob/raw references with matching immutable identity evidence now collapse onto one canonical artifact id in shared source/core flows
 * build and regression tests for `resolveArtifact`, `readEnvelope`, `validateArtifact`, `getLineage`, `getHandoffPacket`, `getRelevantSlice`, `getSchemaContract`, `getValidationOverlay`, `getAvailableActions`, `getStructureIndex`, `getTreeProjection`, `getNodeDetails`, and `getNodeChildren`
 
 Still intentionally incomplete:
 
-* alias collapse and alias conflict handling across equivalent origin forms
+* broader alias-family handling beyond the currently supported GitHub path-family rules and current local-file equivalence
 * broader projection surfaces beyond the current structure/tree/details/children set
 
 ---
@@ -183,10 +184,6 @@ DoD:
 Use a structure that prevents the IDE surface from becoming the runtime core.
 
 Suggested layout:
-* [x] Available actions are derived from artifact state and core policy.
-* [x] VSCode does not own schema action policy.
-* [x] Actions are transport-neutral descriptions.
-* [x] Mutation actions are excluded unless repair/executor scope is explicitly added later.
 
 ```text
 packages/
@@ -419,15 +416,15 @@ Each resolved artifact should report:
 
 DoD:
 
-* [ ] Same artifact reached through GitHub URL, raw URL, tuple, or equivalent supported references can be deduped when identity evidence matches.
-* [ ] Different content reached through similar aliases is not silently collapsed.
+* [x] Same artifact reached through GitHub URL, raw URL, tuple, or equivalent supported references can be deduped when identity evidence matches.
+* [x] Different content reached through similar aliases is not silently collapsed.
 * [x] Mutable origins produce provisional identity unless stronger evidence exists.
 * [x] Content hash participates in identity when available.
-* [ ] Tree projection uses canonical artifact id, not raw input reference, as node identity.
-* [ ] Handoff packet includes canonical artifact id.
+* [x] Tree projection uses canonical artifact id, not raw input reference, as node identity.
+* [x] Handoff packet includes canonical artifact id.
 * [ ] Cache keys use canonical identity when available.
-* [ ] Alias conflicts produce warning or explicit ambiguity state.
-* [ ] Alias collapse rules live in shared core, not in entry points.
+* [x] Alias conflicts produce warning or explicit ambiguity state.
+* [x] Alias collapse rules live in shared core, not in entry points.
 
 ---
 
@@ -1543,8 +1540,8 @@ This milestone is done when:
 * [x] A readable origin artifact can be resolved.
 * [x] A continuity envelope can be read without returning the full body.
 * [x] Canonical artifact identity is produced.
-* [ ] Alias collapse works when identity evidence matches.
-* [ ] Alias conflicts are represented explicitly.
+* [x] Alias collapse works when identity evidence matches.
+* [x] Alias conflicts are represented explicitly.
 * [x] Root/topic/task artifacts can be validated through shared core.
 * [x] Validation basis is returned.
 * [x] Findings are structured and bounded.
