@@ -56,7 +56,11 @@ Implemented in repo now:
 * bridge status families now include a distinct `unknown` state for readable artifacts whose governing schema is still unsupported, and projections preserve that state separately from `incomplete`
 * `resolveArtifact` is now metadata-first by default and only returns bounded raw source when explicitly requested
 * `readEnvelope`, `validateArtifact`, and `getLineage` now sanitize returned source objects so internal raw reads do not leak full body content through public outputs
+* `validateArtifact` now blocks exact-validation claims when raw source is truncated by `maxArtifactBytes`, rather than treating bounded raw content as a full exact-validation input
 * acceptance coverage now proves a tree-view UX can orient from `getTreeProjection`, `getNodeDetails`, `getNodeChildren`, and `getAvailableActions` without UI-owned parsing, validation, or traversal logic
+* `getNodeDetails` now degrades its top-level status when the selected artifact is blocked, unknown, invalid, or still only partially validated
+* `getAvailableActions` now keeps transport-neutral action lists while degrading its own top-level status and completeness when validation, lineage, or schema resolution remain incomplete or blocked
+* `readEnvelope` now lives in its own module so `getNodeDetails` no longer relies on a circular import through the bridge index surface
 * current repo audit shows no direct `ai-provenance` or `vscode` package/runtime dependency inside `packages/*`, while `apps/cli` remains a thin adapter over shared tool functions
 * build and regression tests for `resolveArtifact`, `readEnvelope`, `validateArtifact`, `getLineage`, `getHandoffPacket`, `getRelevantSlice`, `getSchemaContract`, `getValidationOverlay`, `getAvailableActions`, `getStructureIndex`, `getTreeProjection`, `getNodeDetails`, and `getNodeChildren`
 
@@ -503,7 +507,8 @@ DoD:
 * [x] Raw source requirement is enforced by validators that need exact syntax.
 * [x] Rendered-only readable artifacts do not receive full exact-valid status.
 * [x] Tool output reports exact validation blocked when raw source is unavailable.
-* [ ] Handoff packet does not claim full validation when exact validation is blocked.
+* [x] Truncated raw source does not receive exact-validation claims.
+* [x] Handoff packet does not claim full validation when exact validation is blocked.
 * [x] Tree projection can show rendered-only/readability state separately from validation state.
 * [ ] Entry points cannot override raw-source requirements.
 
@@ -888,6 +893,7 @@ DoD:
 * [x] Returns parent/origin details.
 * [x] Returns relevant body summary when available.
 * [x] Does not return full raw body by default.
+* [x] Degrades top-level status when envelope or validation is blocked, unknown, invalid, or partial.
 
 ### `getNodeChildren`
 
@@ -934,6 +940,7 @@ DoD:
 * [x] Available actions are derived from artifact state and core policy.
 * [x] VSCode does not own schema action policy.
 * [x] Actions are transport-neutral descriptions.
+* [x] Top-level status degrades when artifact health is blocked, partial, or unresolved even if actions can still be computed.
 * [x] Mutation actions are excluded unless repair/executor scope is explicitly added later.
 
 ---
@@ -1375,14 +1382,14 @@ DoD:
 * [ ] Handoff packet includes canonical artifact id.
 * [ ] Handoff packet includes governing schema.
 * [ ] Handoff packet includes validation status.
-* [ ] Handoff packet includes compact validation basis.
-* [ ] Handoff packet includes findings when relevant.
-* [ ] Handoff packet separates parent and origin.
-* [ ] Handoff packet includes relevant slices.
-* [ ] Handoff packet includes do-not-traverse hints.
-* [ ] Handoff packet includes budget/truncation state.
-* [ ] Handoff packet does not require hidden chat context.
-* [ ] Handoff packet does not claim full validation when exact validation is blocked.
+* [x] Handoff packet includes compact validation basis.
+* [x] Handoff packet includes findings when relevant.
+* [x] Handoff packet separates parent and origin.
+* [x] Handoff packet includes relevant slices.
+* [x] Handoff packet includes do-not-traverse hints.
+* [x] Handoff packet includes budget/truncation state.
+* [x] Handoff packet does not require hidden chat context.
+* [x] Handoff packet does not claim full validation when exact validation is blocked.
 
 ---
 

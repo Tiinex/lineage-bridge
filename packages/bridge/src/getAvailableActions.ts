@@ -7,6 +7,23 @@ function action(actionId: AvailableAction["actionId"], title: string, enabled: b
   return { actionId, title, enabled, reason };
 }
 
+function deriveAvailableActionsStatus(input: {
+  validation: ReturnType<typeof validateArtifact>;
+  lineage: ReturnType<typeof getLineage>;
+  schemaContract: ReturnType<typeof getSchemaContract>;
+}): GetAvailableActionsResult["status"] {
+  if (input.validation.status !== "ok") {
+    return input.validation.status;
+  }
+  if (!input.lineage.complete || input.schemaContract.contract.unresolved) {
+    return "incomplete";
+  }
+  if (input.validation.validationBasis.partialValidation || !input.validation.validationBasis.schemaResolutionComplete) {
+    return "incomplete";
+  }
+  return "ok";
+}
+
 export function getAvailableActions(input: GetAvailableActionsInput): GetAvailableActionsResult {
   const validation = validateArtifact(input);
   const lineage = getLineage(input);
@@ -26,10 +43,11 @@ export function getAvailableActions(input: GetAvailableActionsInput): GetAvailab
 
   return {
     ...createOutputMetadata("getAvailableActions"),
-    status: "ok",
+    compatibilityNotes: [...(validation.compatibilityNotes ?? [])],
+    status: deriveAvailableActionsStatus({ validation, lineage, schemaContract }),
     actions,
-    complete: true,
-    rawReadNeededForNextStep: validation.rawReadNeededForNextStep || lineage.rawReadNeededForNextStep,
+    complete: validation.complete && lineage.complete && !schemaContract.contract.unresolved,
+    rawReadNeededForNextStep: validation.rawReadNeededForNextStep || lineage.rawReadNeededForNextStep || schemaContract.rawReadNeededForNextStep,
     budgets: {
       truncated: validation.budgets.truncated || lineage.budgets.truncated || schemaContract.budgets.truncated,
       exhausted: [...new Set([...validation.budgets.exhausted, ...lineage.budgets.exhausted, ...schemaContract.budgets.exhausted])]

@@ -138,6 +138,16 @@ test("validateArtifact returns invalid when a task artifact has no readable comp
   assert.ok(result.findings.some((finding) => finding.code === "tiinex.task.v1-completion-signal-missing"));
 });
 
+test("validateArtifact does not claim exact validation when raw source is truncated by budget", () => {
+  const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "001.trace.md");
+  const result = validateArtifact({ reference, maxArtifactBytes: 128 });
+  assert.equal(result.status, "incomplete");
+  assert.equal(result.validationBasis.usedRawSource, false);
+  assert.equal(result.validationBasis.exactValidationBlocked, true);
+  assert.equal(result.budgets.truncated, true);
+  assert.ok(result.findings.some((finding) => finding.code === "raw-source-truncated"));
+});
+
 test("validateArtifact returns unknown when the artifact schema is readable but unsupported", () => {
   const reference = path.resolve(__dirname, "..", "src", "fixtures", "unknown-schema.trace.md");
   const result = validateArtifact({ reference });
@@ -181,6 +191,18 @@ test("getHandoffPacket returns a compact packet for a fresh chat", () => {
   assert.equal(result.handoff.continuity.parent?.traceTarget, "001.trace.md");
   assert.ok(result.handoff.relevantSlices.some((slice) => slice.label === "current-summary"));
   assert.ok(result.handoff.doNotTraverse.length > 0);
+});
+
+test("getHandoffPacket does not claim full validation when exact validation is blocked by truncation", () => {
+  const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "001.trace.md");
+  const result = getHandoffPacket({ reference, maxArtifactBytes: 128 });
+  assert.equal(result.status, "incomplete");
+  assert.equal(result.handoff.validation.status, "incomplete");
+  assert.equal(result.handoff.validation.rawValidatorStatus, "incomplete");
+  assert.equal(result.handoff.validation.basis.exactValidationBlocked, true);
+  assert.equal(result.handoff.validation.basis.usedRawSource, false);
+  assert.equal(result.handoff.budgets.truncated, true);
+  assert.ok(result.handoff.validation.findings.some((finding) => finding.code === "raw-source-truncated"));
 });
 
 test("getRelevantSlice returns bounded handoff-oriented slices without raw body by default", () => {
@@ -282,13 +304,23 @@ test("getStructureIndex and tree projection preserve unknown validation status s
 test("getAvailableActions returns transport-neutral actions from core policy", () => {
   const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "memes", "work", "remote", "001-1-echo-cloud-handoff.trace.md");
   const result = getAvailableActions({ reference, maxDepth: 1 });
-  assert.equal(result.status, "ok");
+  assert.equal(result.status, "incomplete");
+  assert.equal(result.complete, false);
   assert.ok(result.actions.some((entry) => entry.actionId === "open-parent" && entry.enabled));
   assert.ok(result.actions.some((entry) => entry.actionId === "validate" && entry.enabled));
   assert.ok(result.actions.some((entry) => entry.actionId === "copy-handoff" && entry.enabled));
   assert.ok(result.actions.some((entry) => entry.actionId === "copy-relevant-slice" && entry.enabled));
   assert.ok(result.actions.some((entry) => entry.actionId === "inspect-schema-contract" && entry.enabled));
   assert.equal(result.actions.some((entry) => entry.title.includes("Repair")), false);
+});
+
+test("getAvailableActions degrades status when artifact access is blocked", () => {
+  const reference = "https://github.com/Tiinex/not-a-real-local-mirror/blob/1234567/docs/example.trace.md";
+  const result = getAvailableActions({ reference, maxDepth: 1 });
+  assert.equal(result.status, "blocked");
+  assert.equal(result.complete, false);
+  assert.equal(result.actions.some((entry) => entry.actionId === "copy-handoff" && entry.enabled), false);
+  assert.equal(result.actions.some((entry) => entry.actionId === "copy-relevant-slice" && entry.enabled), false);
 });
 
 test("getStructureIndex returns a bounded deduped index with parent and validation summaries", () => {
@@ -358,7 +390,7 @@ test("getNodeDetails returns lazy node details without raw body by default", () 
   const taskNode = projection.nodes.find((node) => node.schemaId === "tiinex.task.v1");
   assert.ok(taskNode);
   const result = getNodeDetails({ references: [artifactA, artifactB], nodeId: taskNode!.nodeId });
-  assert.equal(result.status, "ok");
+  assert.equal(result.status, "incomplete");
   assert.equal(result.envelope?.currentSchema?.label, "tiinex.task.v1");
   assert.equal(result.validationBasis?.governingSchemaId, "tiinex.task.v1");
   assert.equal(result.relevantBodySummary?.includes("Task"), true);
@@ -397,7 +429,7 @@ test("tree view UX can orient entirely from projection outputs without owning co
   assert.equal(taskNode?.partialValidation, true);
 
   const details = getNodeDetails({ references: [artifactA, artifactB], nodeId: taskNode!.nodeId });
-  assert.equal(details.status, "ok");
+  assert.equal(details.status, "incomplete");
   assert.equal(details.envelope?.currentSchema?.label, "tiinex.task.v1");
   assert.equal(details.validationBasis?.governingSchemaId, "tiinex.task.v1");
   assert.equal(typeof details.relevantBodySummary, "string");
@@ -408,7 +440,7 @@ test("tree view UX can orient entirely from projection outputs without owning co
   assert.equal(children.children[0]?.nodeId, taskNode?.nodeId);
 
   const actions = getAvailableActions({ reference: artifactA, maxDepth: 1 });
-  assert.equal(actions.status, "ok");
+  assert.equal(actions.status, "incomplete");
   assert.equal(actions.actions.some((entry) => entry.actionId === "open-parent" && entry.enabled), true);
   assert.equal(actions.actions.some((entry) => entry.actionId === "copy-handoff" && entry.enabled), true);
   assert.equal(actions.actions.some((entry) => entry.actionId === "copy-relevant-slice" && entry.enabled), true);
@@ -450,4 +482,22 @@ test("tree projection preserves readability state separately from validation sta
   assert.equal(tree.nodes[0]?.sourceAccessStatus, "not-found");
   assert.equal(tree.nodes[0]?.rawContentAvailability, "rendered-only");
   assert.equal(tree.nodes[0]?.renderedContentAvailability, true);
+});
+
+test("getNodeDetails degrades status when validation is blocked or partial", () => {
+  const blockedReference = "https://github.com/Tiinex/not-a-real-local-mirror/blob/1234567/docs/example.trace.md";
+  const blockedProjection = getTreeProjection({ references: [blockedReference] });
+  const blockedNode = blockedProjection.nodes[0];
+  assert.ok(blockedNode);
+
+  const blockedDetails = getNodeDetails({ references: [blockedReference], nodeId: blockedNode!.nodeId });
+  assert.equal(blockedDetails.status, "blocked");
+
+  const partialReference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "memes", "work", "remote", "001-1-echo-cloud-handoff.trace.md");
+  const partialProjection = getTreeProjection({ references: [partialReference] });
+  const partialNode = partialProjection.nodes[0];
+  assert.ok(partialNode);
+
+  const partialDetails = getNodeDetails({ references: [partialReference], nodeId: partialNode!.nodeId });
+  assert.equal(partialDetails.status, "incomplete");
 });

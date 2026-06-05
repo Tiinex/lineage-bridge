@@ -259,6 +259,41 @@ export function validateArtifact(input: ValidateArtifactInput): ValidateArtifact
   const resolved = resolveArtifact({ ...input, includeRawContent: true });
   const source = stripRawContentFromSource(resolved.source);
   const compatibilityNotes = ["initial validator coverage: continuity envelope plus minimal body-shape rules only"];
+  if (resolved.budgets.truncated) {
+    return {
+      ...createOutputMetadata("validateArtifact"),
+      compatibilityNotes,
+      status: "incomplete",
+      source,
+      artifact: resolved.artifact,
+      findings: [createFinding({
+        code: "raw-source-truncated",
+        severity: "warning",
+        message: "Exact validation is blocked because the raw source was truncated by maxArtifactBytes.",
+        targetSurface: "source",
+        ruleSource: "Milestone 1 / Raw Source Requirements"
+      })],
+      validationBasis: createValidationBasis({
+        artifactCanonicalId: resolved.artifact.canonicalArtifactId,
+        artifactOriginReference: resolved.source.inputReference,
+        artifactContentHash: resolved.artifact.contentHash,
+        artifactRawSourceStatus: resolved.source.rawContentAvailability,
+        governingSchemaId: undefined,
+        governingSchemaReference: undefined,
+        governingSchemaContentHash: undefined,
+        validatorId: undefined,
+        validatorVersion: undefined,
+        validationPolicyVersion: "0.1.0",
+        schemaResolutionComplete: false,
+        usedRawSource: false,
+        exactValidationBlocked: true,
+        partialValidation: true
+      }),
+      complete: false,
+      rawReadNeededForNextStep: false,
+      budgets: resolved.budgets
+    };
+  }
   if (!resolved.source.rawContent) {
     return {
       ...createOutputMetadata("validateArtifact"),

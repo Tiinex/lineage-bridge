@@ -1,6 +1,3 @@
-import { type ReadEnvelopeInput, type ReadEnvelopeResult, createOutputMetadata, stripRawContentFromSource } from "@tiinex/lineage-bridge-core";
-import { parseContinuityEnvelope } from "@tiinex/lineage-bridge-parsers";
-import { resolveArtifact } from "@tiinex/lineage-bridge-sources";
 import { validateArtifact } from "@tiinex/lineage-bridge-validators";
 import { getLineage } from "./getLineage";
 import { getHandoffPacket } from "./getHandoffPacket";
@@ -10,12 +7,14 @@ import { getValidationOverlay } from "./getValidationOverlay";
 import { getAvailableActions } from "./getAvailableActions";
 import { getStructureIndex } from "./getStructureIndex";
 import { getTreeProjection } from "./getTreeProjection";
+import { readEnvelope } from "./readEnvelope";
 import { getNodeDetails } from "./getNodeDetails";
 import { getNodeChildren } from "./getNodeChildren";
 
 export { resolveArtifact } from "@tiinex/lineage-bridge-sources";
 export { parseContinuityEnvelope } from "@tiinex/lineage-bridge-parsers";
 export { validateArtifact } from "@tiinex/lineage-bridge-validators";
+export { readEnvelope } from "./readEnvelope";
 export { getLineage } from "./getLineage";
 export { getHandoffPacket } from "./getHandoffPacket";
 export { getRelevantSlice } from "./getRelevantSlice";
@@ -27,29 +26,3 @@ export { getTreeProjection } from "./getTreeProjection";
 export { getNodeDetails } from "./getNodeDetails";
 export { getNodeChildren } from "./getNodeChildren";
 export * from "@tiinex/lineage-bridge-core";
-
-export function readEnvelope(input: ReadEnvelopeInput): ReadEnvelopeResult {
-  const resolved = resolveArtifact({ ...input, includeRawContent: true });
-  const source = stripRawContentFromSource(resolved.source);
-  if (!resolved.source.rawContent) {
-    return {
-      ...createOutputMetadata("readEnvelope"),
-      status: resolved.status,
-      source,
-      artifact: resolved.artifact,
-      complete: false,
-      rawReadNeededForNextStep: true,
-      budgets: resolved.budgets
-    };
-  }
-  return {
-    ...createOutputMetadata("readEnvelope"),
-    status: "ok",
-    source,
-    artifact: resolved.artifact,
-    envelope: parseContinuityEnvelope(resolved.source.rawContent),
-    complete: resolved.complete,
-    rawReadNeededForNextStep: false,
-    budgets: resolved.budgets
-  };
-}
