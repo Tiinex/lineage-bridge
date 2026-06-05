@@ -18,6 +18,54 @@ export type ExactValidationCapability = "available" | "blocked" | "unknown";
 
 export type OriginMutability = "immutable" | "mutable" | "unknown";
 
+export type SourceStrategy = "local-workspace" | "github-local-mirror" | "github-remote" | "unsupported";
+
+export type SourceTrustLevel = "workspace-local" | "local-mirror" | "remote-public" | "unknown";
+
+export type SourceRefKind = "commit" | "branch" | "tag" | "not-applicable" | "unknown";
+
+export type WorkspaceSymlinkPolicy = "follow" | "error" | "within-workspace";
+
+export interface WorkspaceAccessPolicy {
+  roots: string[];
+  allowOutsideRoots?: boolean;
+  symlinkPolicy?: WorkspaceSymlinkPolicy;
+}
+
+export interface SourceNetworkBudgetInput {
+  maxFetches?: number;
+  maxSchemaFetches?: number;
+  maxRedirects?: number;
+  requestTimeoutMs?: number;
+  totalTimeoutMs?: number;
+  retryCount?: number;
+}
+
+export interface RemoteFetchRequest {
+  url: string;
+  headers?: Record<string, string>;
+  timeoutMs?: number;
+}
+
+export interface RemoteFetchResponse {
+  ok: boolean;
+  status: number;
+  bodyText?: string;
+  finalUrl?: string;
+  headers?: Record<string, string>;
+  errorCode?: "network-failure" | "timeout" | "rate-limited" | "unauthorized" | "not-found";
+}
+
+export type RemoteArtifactFetcher = (request: RemoteFetchRequest) => Promise<RemoteFetchResponse>;
+
+export interface SourceAccessOptions {
+  preferredGitHubStrategy?: "auto" | "remote" | "local-mirror";
+  freshOriginResolution?: boolean;
+  workspace?: WorkspaceAccessPolicy;
+  network?: SourceNetworkBudgetInput;
+  remoteFetcher?: RemoteArtifactFetcher;
+}
+
 export interface BridgeOutputMetadata {
   bridgeOutputSchema: typeof BRIDGE_OUTPUT_SCHEMA_V1;
   toolName: BridgeToolName;
@@ -48,6 +96,9 @@ export interface ArtifactIdentity {
 }
 
 export interface ResolvedArtifactSource {
+  sourceStrategy: SourceStrategy;
+  trustLevel: SourceTrustLevel;
+  refKind: SourceRefKind;
   originKind: "github-blob" | "github-raw" | "local-file" | "unsupported";
   inputReference: string;
   normalizedReference?: string;
@@ -483,6 +534,7 @@ export interface ResolveArtifactInput {
   reference: string;
   maxArtifactBytes?: number;
   includeRawContent?: boolean;
+  sourceAccess?: SourceAccessOptions;
 }
 
 export interface ReadEnvelopeInput extends ResolveArtifactInput {}

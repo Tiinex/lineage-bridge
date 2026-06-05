@@ -9,6 +9,9 @@ test("resolveArtifact reads a local Tiinex artifact", () => {
   const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "kickstarter", "001.trace.md");
   const result = resolveArtifact({ reference });
   assert.equal(result.status, "ok");
+  assert.equal(result.source.sourceStrategy, "local-workspace");
+  assert.equal(result.source.trustLevel, "workspace-local");
+  assert.equal(result.source.refKind, "not-applicable");
   assert.equal(result.source.accessStatus, "readable");
   assert.equal(result.source.rawContentAvailability, "available");
   assert.equal(result.source.rawContent, undefined);
@@ -32,6 +35,36 @@ test("resolveArtifact returns bounded raw content only when explicitly requested
   assert.equal(result.rawReadNeededForNextStep, false);
 });
 
+test("resolveArtifact accepts the M2 source contract upgrade inputs without changing current scaffold behavior", () => {
+  const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "kickstarter", "001.trace.md");
+  const result = resolveArtifact({
+    reference,
+    sourceAccess: {
+      workspace: {
+        roots: [path.resolve(__dirname, "..", "..", "..", "..", "docs")],
+        symlinkPolicy: "within-workspace"
+      },
+      preferredGitHubStrategy: "remote",
+      freshOriginResolution: true,
+      network: {
+        maxFetches: 4,
+        maxSchemaFetches: 2,
+        maxRedirects: 3,
+        requestTimeoutMs: 1500,
+        totalTimeoutMs: 5000,
+        retryCount: 1
+      },
+      remoteFetcher: async () => ({ ok: false, status: 501, errorCode: "network-failure" })
+    }
+  });
+  assert.equal(result.status, "ok");
+  assert.equal(result.source.sourceStrategy, "local-workspace");
+  assert.ok(result.compatibilityNotes?.includes("Workspace access policy shape is accepted but is not enforced until the local sandbox phase."));
+  assert.ok(result.compatibilityNotes?.includes("Remote GitHub fetch contract is declared but current resolution still uses the existing local mirror path."));
+  assert.ok(result.compatibilityNotes?.includes("Remote network budget shapes are accepted for future source strategies but are not enforced by the current local scaffold."));
+  assert.ok(result.compatibilityNotes?.includes("Fresh origin resolution preference is declared but is not enforced before remote fetch and cache phases are implemented."));
+});
+
 test("resolveArtifact collapses equivalent GitHub blob and raw references onto the same canonical artifact id", () => {
   const revision = "291c00f4aaba1e1ba5a0c3479c078070a83c060e";
   const relativePath = ".topics/educational/memes/work/remote/001.trace.md";
@@ -41,6 +74,9 @@ test("resolveArtifact collapses equivalent GitHub blob and raw references onto t
   const rawResult = resolveArtifact({ reference: rawReference });
   assert.equal(blobResult.status, "ok");
   assert.equal(rawResult.status, "ok");
+  assert.equal(blobResult.source.sourceStrategy, "github-local-mirror");
+  assert.equal(blobResult.source.trustLevel, "local-mirror");
+  assert.equal(blobResult.source.refKind, "commit");
   assert.equal(blobResult.artifact.canonicalArtifactId, rawResult.artifact.canonicalArtifactId);
   assert.equal(blobResult.artifact.cacheIdentity.cacheable, true);
   assert.equal(blobResult.artifact.cacheIdentity.cacheScope, "immutable-origin");

@@ -43,6 +43,10 @@ Scope:
 
 Stop for review after M2 Leaf 1 before moving into actual remote fetch behavior.
 
+Current progress:
+
+* [x] M2 Leaf 1 completed: source strategy metadata, remote fetch abstraction shape, workspace root config shape, timeout/retry/budget input shapes, and output compatibility are now represented in shared core and current source outputs without starting real remote fetch behavior.
+
 ---
 
 ## Starting Point
@@ -467,11 +471,11 @@ DoD:
 
 ### Phase 1 — Source Contract Upgrade
 
-* [ ] Define source strategy metadata.
-* [ ] Define remote fetch abstraction.
-* [ ] Define workspace root config shape.
-* [ ] Define timeout/retry/budget inputs.
-* [ ] Preserve existing output shape compatibility.
+* [x] Define source strategy metadata.
+* [x] Define remote fetch abstraction.
+* [x] Define workspace root config shape.
+* [x] Define timeout/retry/budget inputs.
+* [x] Preserve existing output shape compatibility.
 
 ### Phase 2 — Remote GitHub Fetch
 

@@ -86,6 +86,9 @@ function createGitHubIdentityFamilyKey(owner: string, repo: string, relativePath
 
 function okSource(partial: Partial<ResolvedArtifactSource>): ResolvedArtifactSource {
   return {
+    sourceStrategy: partial.sourceStrategy ?? "unsupported",
+    trustLevel: partial.trustLevel ?? "unknown",
+    refKind: partial.refKind ?? "unknown",
     originKind: partial.originKind ?? "unsupported",
     inputReference: partial.inputReference ?? "",
     normalizedReference: partial.normalizedReference,
@@ -106,8 +109,27 @@ function okSource(partial: Partial<ResolvedArtifactSource>): ResolvedArtifactSou
   };
 }
 
-function resolveLocalFile(reference: string, maxArtifactBytes: number, includeRawContent: boolean | undefined): ResolveArtifactResult {
+function getContractUpgradeNotes(input: ResolveArtifactInput): string[] {
+  const notes: string[] = [];
+  if (input.sourceAccess?.workspace) {
+    notes.push("Workspace access policy shape is accepted but is not enforced until the local sandbox phase.");
+  }
+  if (input.sourceAccess?.preferredGitHubStrategy === "remote" || input.sourceAccess?.remoteFetcher) {
+    notes.push("Remote GitHub fetch contract is declared but current resolution still uses the existing local mirror path.");
+  }
+  if (input.sourceAccess?.network) {
+    notes.push("Remote network budget shapes are accepted for future source strategies but are not enforced by the current local scaffold.");
+  }
+  if (input.sourceAccess?.freshOriginResolution) {
+    notes.push("Fresh origin resolution preference is declared but is not enforced before remote fetch and cache phases are implemented.");
+  }
+  return notes;
+}
+
+function resolveLocalFile(input: ResolveArtifactInput, maxArtifactBytes: number): ResolveArtifactResult {
+  const { reference, includeRawContent } = input;
   const normalizedPath = path.resolve(reference);
+  const contractNotes = getContractUpgradeNotes(input);
   try {
     const rawContent = readFileSync(normalizedPath, "utf8");
     const truncated = Buffer.byteLength(rawContent, "utf8") > maxArtifactBytes;
@@ -116,6 +138,9 @@ function resolveLocalFile(reference: string, maxArtifactBytes: number, includeRa
     const outputTruncated = includeRawContent ? truncated : false;
     const contentHash = computeContentHash(rawContent);
     const source = okSource({
+      sourceStrategy: "local-workspace",
+      trustLevel: "workspace-local",
+      refKind: "not-applicable",
       originKind: "local-file",
       inputReference: reference,
       normalizedReference: normalizedPath,
@@ -135,7 +160,15 @@ function resolveLocalFile(reference: string, maxArtifactBytes: number, includeRa
     });
     return {
       ...createOutputMetadata("resolveArtifact"),
-      compatibilityNotes: includeRawContent ? undefined : ["Raw source is omitted by default; request includeRawContent to access bounded raw content."],
+      compatibilityNotes: [
+        ...(!includeRawContent ? ["Raw source is omitted by default; request includeRawContent to access bounded raw content."] : []),
+        ...contractNotes
+      ].length > 0
+        ? [
+            ...(!includeRawContent ? ["Raw source is omitted by default; request includeRawContent to access bounded raw content."] : []),
+            ...contractNotes
+          ]
+        : undefined,
       status: "ok",
       source,
       artifact: createIdentity({ normalizedReference: normalizedPath, identityFamilyKey: normalizedPath, contentHash, provisional: true }),
@@ -148,6 +181,9 @@ function resolveLocalFile(reference: string, maxArtifactBytes: number, includeRa
     };
   } catch {
     const source = okSource({
+      sourceStrategy: "local-workspace",
+      trustLevel: "workspace-local",
+      refKind: "not-applicable",
       originKind: "local-file",
       inputReference: reference,
       normalizedReference: normalizedPath,
@@ -161,6 +197,7 @@ function resolveLocalFile(reference: string, maxArtifactBytes: number, includeRa
     });
     return {
       ...createOutputMetadata("resolveArtifact"),
+      compatibilityNotes: contractNotes.length > 0 ? contractNotes : undefined,
       status: "unavailable",
       source,
       artifact: createIdentity({ normalizedReference: normalizedPath, identityFamilyKey: normalizedPath, provisional: true }),
@@ -171,7 +208,8 @@ function resolveLocalFile(reference: string, maxArtifactBytes: number, includeRa
   }
 }
 
-function resolveGitHubReference(reference: string, maxArtifactBytes: number, includeRawContent: boolean | undefined): ResolveArtifactResult | undefined {
+function resolveGitHubReference(input: ResolveArtifactInput, maxArtifactBytes: number): ResolveArtifactResult | undefined {
+  const { reference, includeRawContent } = input;
   const blobMatch = reference.match(GITHUB_BLOB_RE);
   const rawMatch = reference.match(GITHUB_RAW_RE);
   if (!blobMatch && !rawMatch) {
@@ -189,6 +227,7 @@ function resolveGitHubReference(reference: string, maxArtifactBytes: number, inc
   const identityFamilyKey = createGitHubIdentityFamilyKey(owner, repo, relativePath);
   const localRepoCandidate = path.resolve(path.dirname(process.cwd()), repo);
   const localFileCandidate = path.resolve(localRepoCandidate, ...relativePath.split("/"));
+  const contractNotes = getContractUpgradeNotes(input);
   try {
     const rawContent = readFileSync(localFileCandidate, "utf8");
     const truncated = Buffer.byteLength(rawContent, "utf8") > maxArtifactBytes;
@@ -199,6 +238,9 @@ function resolveGitHubReference(reference: string, maxArtifactBytes: number, inc
     const rawAvailability: RawContentAvailability = maybeBlob === "blob" ? "available" : "available";
     const exactValidationCapability: ExactValidationCapability = "available";
     const source = okSource({
+      sourceStrategy: "github-local-mirror",
+      trustLevel: "local-mirror",
+      refKind: "commit",
       originKind: blobMatch ? "github-blob" : "github-raw",
       inputReference: reference,
       normalizedReference,
@@ -221,7 +263,8 @@ function resolveGitHubReference(reference: string, maxArtifactBytes: number, inc
       ...createOutputMetadata("resolveArtifact"),
       compatibilityNotes: [
         "GitHub references are currently resolved via a local mirror, not by remote fetch.",
-        ...(!includeRawContent ? ["Raw source is omitted by default; request includeRawContent to access bounded raw content."] : [])
+        ...(!includeRawContent ? ["Raw source is omitted by default; request includeRawContent to access bounded raw content."] : []),
+        ...contractNotes
       ],
       status: "ok",
       source,
@@ -235,6 +278,9 @@ function resolveGitHubReference(reference: string, maxArtifactBytes: number, inc
     };
   } catch {
     const source = okSource({
+      sourceStrategy: "github-local-mirror",
+      trustLevel: "local-mirror",
+      refKind: "commit",
       originKind: blobMatch ? "github-blob" : "github-raw",
       inputReference: reference,
       normalizedReference,
@@ -253,7 +299,7 @@ function resolveGitHubReference(reference: string, maxArtifactBytes: number, inc
     });
     return {
       ...createOutputMetadata("resolveArtifact"),
-      compatibilityNotes: ["GitHub references are currently resolved via a local mirror, not by remote fetch."],
+      compatibilityNotes: ["GitHub references are currently resolved via a local mirror, not by remote fetch.", ...contractNotes],
       status: "blocked",
       source,
       artifact: createIdentity({ normalizedReference, immutableSourceIdentity, identityFamilyKey, provisional: false }),
@@ -266,15 +312,20 @@ function resolveGitHubReference(reference: string, maxArtifactBytes: number, inc
 
 export function resolveArtifact(input: ResolveArtifactInput): ResolveArtifactResult {
   const maxArtifactBytes = input.maxArtifactBytes ?? 128_000;
-  const githubResult = resolveGitHubReference(input.reference, maxArtifactBytes, input.includeRawContent);
+  const githubResult = resolveGitHubReference(input, maxArtifactBytes);
   if (githubResult) {
     return githubResult;
   }
   if (/^https?:\/\//iu.test(input.reference)) {
+    const contractNotes = getContractUpgradeNotes(input);
     return {
       ...createOutputMetadata("resolveArtifact"),
+      compatibilityNotes: contractNotes.length > 0 ? contractNotes : undefined,
       status: "unsupported",
       source: okSource({
+        sourceStrategy: "unsupported",
+        trustLevel: "unknown",
+        refKind: "unknown",
         originKind: "unsupported",
         inputReference: input.reference,
         accessStatus: "unsupported-origin",
@@ -290,5 +341,5 @@ export function resolveArtifact(input: ResolveArtifactInput): ResolveArtifactRes
       budgets: { truncated: false, exhausted: [] }
     };
   }
-  return resolveLocalFile(input.reference, maxArtifactBytes, input.includeRawContent);
+  return resolveLocalFile(input, maxArtifactBytes);
 }
