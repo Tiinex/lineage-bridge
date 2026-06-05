@@ -86,7 +86,7 @@ export function parseContinuityEnvelope(markdown: string): ContinuityEnvelope {
         envelope.parentSchema = { label: linkMatch[2].trim(), target: linkMatch[3].trim() };
         continue;
       }
-      if (linkMatch[1] === "Trace") {
+      if (linkMatch[1] === "Trace" || linkMatch[1] === "Parent Trace") {
         envelope.parentTrace = { label: linkMatch[2].trim(), target: linkMatch[3].trim() };
         continue;
       }

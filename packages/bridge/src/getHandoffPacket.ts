@@ -4,12 +4,12 @@ import {
   createOutputMetadata
 } from "@tiinex/lineage-bridge-core";
 import { parseContinuityEnvelope } from "@tiinex/lineage-bridge-parsers";
-import { resolveArtifact } from "@tiinex/lineage-bridge-sources";
-import { getLineage } from "./getLineage";
-import { validateArtifact } from "@tiinex/lineage-bridge-validators";
+import { resolveArtifact, resolveArtifactAsync } from "@tiinex/lineage-bridge-sources";
+import { getLineage, getLineageAsync } from "./getLineage";
+import { validateArtifact, validateArtifactAsync } from "@tiinex/lineage-bridge-validators";
 import { selectRelevantSlices } from "./selectRelevantSlices";
 
-function deriveConsumerFacingValidationStatus(validation: ReturnType<typeof validateArtifact>): GetHandoffPacketResult["handoff"]["validation"]["status"] {
+function deriveConsumerFacingValidationStatus(validation: Awaited<ReturnType<typeof validateArtifactAsync>>): GetHandoffPacketResult["handoff"]["validation"]["status"] {
   if (validation.status !== "ok") {
     return validation.status;
   }
@@ -90,6 +90,95 @@ export function getHandoffPacket(input: GetHandoffPacketInput): GetHandoffPacket
 
   return {
     ...createOutputMetadata("getHandoffPacket"),
+    compatibilityNotes: validation.compatibilityNotes,
+    status,
+    handoff: {
+      handoffShapeVersion: 1,
+      artifact: {
+        canonicalArtifactId: validation.artifact.canonicalArtifactId,
+        origin: validation.source.normalizedReference ?? validation.source.inputReference,
+        reference: validation.source.inputReference,
+        path: validation.source.path,
+        schema: validation.governingSchemaId,
+        summary: envelope?.currentSummary,
+        contentHash: validation.artifact.contentHash,
+        aliases: validation.artifact.aliases
+      },
+      validation: {
+        status: consumerFacingValidationStatus,
+        rawValidatorStatus: validation.status,
+        basis: validation.validationBasis,
+        findings: importantFindings
+      },
+      continuity: {
+        parent: lineage.nodes[0]?.parent || parentNode
+          ? {
+              canonicalArtifactId: parentNode?.artifact.canonicalArtifactId,
+              summary: parentNode?.summary,
+              traceTarget: lineage.nodes[0]?.parent?.traceTarget,
+              schemaId: parentNode?.schemaId ?? lineage.nodes[0]?.parent?.schemaId
+            }
+          : undefined,
+        originCandidates: lineage.originRecoveryCandidates
+      },
+      currentLeaf: {
+        summary: envelope?.currentSummary,
+        nextAction,
+        nonGoals: doNotTraverse
+      },
+      relevantSlices,
+      doNotTraverse,
+      budgets: {
+        truncated: artifact.budgets.truncated || validation.budgets.truncated || lineage.budgets.truncated,
+        exhausted: [...new Set([...artifact.budgets.exhausted, ...validation.budgets.exhausted, ...lineage.budgets.exhausted])]
+      }
+    },
+    complete,
+    rawReadNeededForNextStep: validation.rawReadNeededForNextStep || lineage.rawReadNeededForNextStep,
+    budgets: {
+      truncated: artifact.budgets.truncated || validation.budgets.truncated || lineage.budgets.truncated,
+      exhausted: [...new Set([...artifact.budgets.exhausted, ...validation.budgets.exhausted, ...lineage.budgets.exhausted])]
+    }
+  };
+}
+
+export async function getHandoffPacketAsync(input: GetHandoffPacketInput): Promise<GetHandoffPacketResult> {
+  const validation = await validateArtifactAsync(input);
+  const lineage = await getLineageAsync(input);
+  const artifact = await resolveArtifactAsync({ ...input, includeRawContent: true });
+  const envelope = artifact.source.rawContent && !artifact.budgets.truncated
+    ? parseContinuityEnvelope(artifact.source.rawContent)
+    : undefined;
+  const parentNode = lineage.nodes[1];
+  const importantFindings = validation.findings.filter((finding) => finding.severity !== "info");
+  const consumerFacingValidationStatus = deriveConsumerFacingValidationStatus(validation);
+  const nextAction = deriveNextAction({
+    validationStatus: consumerFacingValidationStatus,
+    lineageStoppedBecause: lineage.stoppedBecause,
+    originRecoveryCandidates: lineage.originRecoveryCandidates
+  });
+  const doNotTraverse = deriveDoNotTraverseHints({
+    partialValidation: validation.validationBasis.partialValidation,
+    lineageStoppedBecause: lineage.stoppedBecause,
+    originRecoveryCandidates: lineage.originRecoveryCandidates
+  });
+  const relevantSlices = selectRelevantSlices({
+    purpose: "handoff",
+    summary: envelope?.currentSummary,
+    findings: importantFindings.map((finding) => finding.message),
+    parentSummary: parentNode?.summary,
+    lineageStoppedBecause: lineage.stoppedBecause
+  });
+  const complete = validation.complete && lineage.complete;
+  const status = consumerFacingValidationStatus === "invalid"
+    ? "invalid"
+    : complete
+      ? "ok"
+      : "incomplete";
+
+  return {
+    ...createOutputMetadata("getHandoffPacket"),
+    compatibilityNotes: validation.compatibilityNotes,
     status,
     handoff: {
       handoffShapeVersion: 1,

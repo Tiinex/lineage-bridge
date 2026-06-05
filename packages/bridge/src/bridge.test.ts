@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node
 import os from "node:os";
 import path from "node:path";
 import { type RemoteFetchRequest } from "@tiinex/lineage-bridge-core";
-import { getAvailableActions, getHandoffPacket, getLineage, getNodeChildren, getNodeDetails, getRelevantSlice, getSchemaContract, getSchemaContractAsync, getStructureIndex, getTreeProjection, getValidationOverlay, parseContinuityEnvelope, readEnvelope, resolveArtifact, resolveArtifactAsync, validateArtifact, validateArtifactAsync } from "./index";
+import { getAvailableActions, getAvailableActionsAsync, getHandoffPacket, getHandoffPacketAsync, getLineage, getLineageAsync, getNodeChildren, getNodeDetails, getRelevantSlice, getRelevantSliceAsync, getSchemaContract, getSchemaContractAsync, getStructureIndex, getTreeProjection, getValidationOverlay, parseContinuityEnvelope, readEnvelope, resolveArtifact, resolveArtifactAsync, validateArtifact, validateArtifactAsync } from "./index";
 import { parseContractSection } from "@tiinex/lineage-bridge-parsers";
 import { classifyAliasFamilies, getAliasFamilyKey } from "./aliasFamilies";
 
@@ -667,6 +667,39 @@ test("getLineage does not parse lineage state from truncated raw source", () => 
   assert.ok(result.budgets.exhausted.includes("maxArtifactBytes"));
 });
 
+test("getLineageAsync resolves relative remote parent traces without a local mirror", async () => {
+  const reference = "https://github.com/Tiinex/docs/blob/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001-1-echo-cloud-handoff.trace.md";
+  const requests: string[] = [];
+  const childBody = `# Continuity Context\n- Envelope Schema: [tiinex.root.v1](schema)\n- Parent\n  - Parent Trace: [001](001.trace.md)\n- Current\n  - Current Schema: [tiinex.task.v1](topic)\n  - Created At: 2026-06-06 00:00:00\n  - Summary: Child remote summary\n---\n# Child\n\n## Objective\n\nRemote child.\n\n## Done Criteria\n\nOrient.\n\n## Scope\n\nBounded.\n`;
+  const parentBody = `# Continuity Context\n- Envelope Schema: [tiinex.root.v1](schema)\n- Current\n  - Current Schema: [tiinex.topic.v1](topic)\n  - Created At: 2026-06-05 00:00:00\n  - Summary: Parent remote summary\n---\n# Parent\n\n## Current Read\n\nParent remote.\n`;
+
+  const result = await getLineageAsync({
+    reference,
+    maxDepth: 1,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      remoteFetcher: async ({ url }: RemoteFetchRequest) => {
+        requests.push(url);
+        return url.endsWith("/001-1-echo-cloud-handoff.trace.md")
+          ? { ok: true, status: 200, bodyText: childBody }
+          : url.endsWith("/001.trace.md")
+            ? { ok: true, status: 200, bodyText: parentBody }
+            : { ok: false, status: 404, errorCode: "not-found" };
+      }
+    }
+  });
+
+  assert.equal(result.status, "ok");
+  assert.equal(result.stoppedBecause, "complete");
+  assert.equal(result.nodes.length, 2);
+  assert.equal(result.nodes[0]?.parent?.traceTarget, "001.trace.md");
+  assert.equal(result.nodes[1]?.summary, "Parent remote summary");
+  assert.deepEqual(requests, [
+    "https://raw.githubusercontent.com/Tiinex/docs/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001-1-echo-cloud-handoff.trace.md",
+    "https://raw.githubusercontent.com/Tiinex/docs/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001.trace.md"
+  ]);
+});
+
 test("getHandoffPacket returns a compact packet for a fresh chat", () => {
   const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "memes", "work", "remote", "001-1-echo-cloud-handoff.trace.md");
   const result = getHandoffPacket({ reference, maxDepth: 1 });
@@ -696,6 +729,62 @@ test("getHandoffPacket does not claim full validation when exact validation is b
   assert.ok(result.handoff.validation.findings.some((finding) => finding.code === "raw-source-truncated"));
 });
 
+test("getHandoffPacketAsync orients remote-only artifacts and preserves schema mutability warnings", async () => {
+  const reference = "https://github.com/Tiinex/docs/blob/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001-1-echo-cloud-handoff.trace.md";
+  const requests: string[] = [];
+  const childBody = `# Continuity Context\n- Envelope Schema: [tiinex.root.v1](schema)\n- Parent\n  - Parent Trace: [001](001.trace.md)\n- Current\n  - Current Schema: [tiinex.task.v1](https://github.com/Tiinex/docs/blob/main/.topics/.schemas/tiinex.task.v1.schema.md)\n  - Created At: 2026-06-06 00:00:00\n  - Summary: Child remote summary\n---\n# Child\n\n## Objective\n\nRemote child.\n\n## Done Criteria\n\nOrient.\n\n## Scope\n\nBounded.\n`;
+  const parentBody = `# Continuity Context\n- Envelope Schema: [tiinex.root.v1](schema)\n- Current\n  - Current Schema: [tiinex.topic.v1](topic)\n  - Created At: 2026-06-05 00:00:00\n  - Summary: Parent remote summary\n---\n# Parent\n\n## Current Read\n\nParent remote.\n`;
+  const schemaBody = `# Continuity Context\n- Envelope Schema: [tiinex.root.v1](tiinex.root.v1.schema.md)\n- Current\n  - Current Schema: [tiinex.task.v1](tiinex.task.v1.schema.md)\n  - Created At: 2026-06-06 00:00:00\n---\n# Task\n\n## Schema Validation Contract\n\n### Task Rules\nValidation Authority\n\n- Schema Validation Contract\n\nGeneration Authority\n\n- Artifact Creation Contract\n\nIntegrity Authority\n\n- Continuity Integrity\n\nKnown Category Labels\n\n- Rules\n`;
+
+  const result = await getHandoffPacketAsync({
+    reference,
+    maxDepth: 1,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      remoteFetcher: async ({ url }: RemoteFetchRequest) => {
+        requests.push(url);
+        return url.endsWith("/001-1-echo-cloud-handoff.trace.md")
+          ? { ok: true, status: 200, bodyText: childBody }
+          : url.endsWith("/001.trace.md")
+            ? { ok: true, status: 200, bodyText: parentBody }
+            : url.endsWith("/.topics/.schemas/tiinex.task.v1.schema.md")
+              ? { ok: true, status: 200, bodyText: schemaBody }
+              : { ok: false, status: 404, errorCode: "not-found" };
+      }
+    }
+  });
+
+  assert.equal(result.handoff.continuity.parent?.summary, "Parent remote summary");
+  assert.equal(result.handoff.continuity.parent?.traceTarget, "001.trace.md");
+  assert.equal(result.handoff.validation.basis.governingSchemaId, "tiinex.task.v1");
+  assert.ok(result.compatibilityNotes?.includes("Artifact is commit-pinned but the governing schema resolved through a mutable reference, so exact schema guidance may drift independently of the artifact."));
+  assert.ok(result.handoff.relevantSlices.some((slice) => slice.label === "current-summary"));
+  assert.ok(requests.includes("https://raw.githubusercontent.com/Tiinex/docs/main/.topics/.schemas/tiinex.task.v1.schema.md"));
+});
+
+test("getHandoffPacketAsync carries cached fallback truth in validation basis", async () => {
+  const reference = "https://github.com/Tiinex/docs/blob/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001.trace.md";
+  const cachedRaw = `# Continuity Context\n- Envelope Schema: [tiinex.root.v1](schema)\n- Current\n  - Current Schema: [tiinex.topic.v1](topic)\n  - Created At: 2026-06-06 00:00:00\n  - Summary: Cached remote summary\n---\n# Cached Remote Topic\n\n## Current Read\n\nCached fallback content.\n`;
+
+  const result = await getHandoffPacketAsync({
+    reference,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      freshOriginResolution: true,
+      cachedArtifactFallback: {
+        rawContent: cachedRaw,
+        cachedAt: "2026-06-06T12:00:00Z",
+        cacheBasis: "content-cache"
+      },
+      remoteFetcher: async () => ({ ok: false, status: 429, errorCode: "rate-limited" })
+    }
+  });
+
+  assert.equal(result.handoff.validation.basis.cachedContentUsed, true);
+  assert.equal(result.handoff.validation.basis.cacheBasis, "content-cache");
+  assert.equal(result.handoff.validation.basis.freshOriginVerified, false);
+});
+
 test("getRelevantSlice returns bounded handoff-oriented slices without raw body by default", () => {
   const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "memes", "work", "remote", "001-1-echo-cloud-handoff.trace.md");
   const result = getRelevantSlice({ reference, purpose: "handoff", maxDepth: 1 });
@@ -718,6 +807,47 @@ test("getRelevantSlice does not select summary slices from truncated raw source"
   assert.equal(result.artifact.summary, undefined);
   assert.equal(result.selectedSlices.some((slice) => slice.label === "current-summary"), false);
   assert.equal(result.budgets.truncated, true);
+});
+
+test("getRelevantSliceAsync does not select summary slices from truncated remote raw source", async () => {
+  const reference = "https://github.com/Tiinex/docs/blob/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/001.trace.md";
+  const rawBody = `# Continuity Context\n- Envelope Schema: [tiinex.root.v1](schema)\n- Current\n  - Current Schema: [tiinex.topic.v1](topic)\n  - Created At: 2026-06-06 00:00:00\n  - Summary: This summary should be truncated away before it is trusted\n---\n# Topic\n\n## Current Read\n\nThis body is intentionally long enough to be truncated by the test budget.\n`;
+  const result = await getRelevantSliceAsync({
+    reference,
+    purpose: "handoff",
+    maxArtifactBytes: 128,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      remoteFetcher: async () => ({ ok: true, status: 200, bodyText: rawBody })
+    }
+  });
+
+  assert.equal(result.status, "incomplete");
+  assert.equal(result.artifact.summary, undefined);
+  assert.equal(result.selectedSlices.some((slice) => slice.label === "current-summary"), false);
+  assert.equal(result.budgets.truncated, true);
+});
+
+test("getAvailableActionsAsync can enable remote-only handoff actions without a local mirror", async () => {
+  const reference = "https://github.com/Tiinex/docs/blob/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001.trace.md";
+  const artifactBody = `# Continuity Context\n- Envelope Schema: [tiinex.root.v1](schema)\n- Current\n  - Current Schema: [tiinex.task.v1](../../../../.schemas/tiinex.task.v1.schema.md)\n  - Created At: 2026-06-06 00:00:00\n  - Summary: Remote actions summary\n---\n# Remote Task\n\n## Objective\n\nRemote action probe.\n\n## Done Criteria\n\nEnable actions.\n\n## Scope\n\nBounded.\n`;
+  const schemaBody = `# Continuity Context\n- Envelope Schema: [tiinex.root.v1](tiinex.root.v1.schema.md)\n- Current\n  - Current Schema: [tiinex.task.v1](tiinex.task.v1.schema.md)\n  - Created At: 2026-06-06 00:00:00\n---\n# Task\n\n## Schema Validation Contract\n\n### Task Rules\nValidation Authority\n\n- Schema Validation Contract\n\nGeneration Authority\n\n- Artifact Creation Contract\n\nIntegrity Authority\n\n- Continuity Integrity\n\nKnown Category Labels\n\n- Rules\n`;
+
+  const result = await getAvailableActionsAsync({
+    reference,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      remoteFetcher: async ({ url }: RemoteFetchRequest) => url.endsWith("/001.trace.md")
+        ? { ok: true, status: 200, bodyText: artifactBody }
+        : url.endsWith("/.topics/.schemas/tiinex.task.v1.schema.md")
+          ? { ok: true, status: 200, bodyText: schemaBody }
+          : { ok: false, status: 404, errorCode: "not-found" }
+    }
+  });
+
+  assert.equal(result.actions.some((entry) => entry.actionId === "copy-handoff" && entry.enabled), true);
+  assert.equal(result.actions.some((entry) => entry.actionId === "copy-relevant-slice" && entry.enabled), true);
+  assert.equal(result.actions.some((entry) => entry.actionId === "inspect-schema-contract" && entry.enabled), true);
 });
 
 test("getSchemaContract reads authority surfaces from the root schema", () => {
