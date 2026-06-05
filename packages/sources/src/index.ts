@@ -75,12 +75,14 @@ function okSource(partial: Partial<ResolvedArtifactSource>): ResolvedArtifactSou
   };
 }
 
-function resolveLocalFile(reference: string, maxArtifactBytes: number): ResolveArtifactResult {
+function resolveLocalFile(reference: string, maxArtifactBytes: number, includeRawContent: boolean | undefined): ResolveArtifactResult {
   const normalizedPath = path.resolve(reference);
   try {
     const rawContent = readFileSync(normalizedPath, "utf8");
     const truncated = Buffer.byteLength(rawContent, "utf8") > maxArtifactBytes;
     const boundedContent = truncated ? rawContent.slice(0, maxArtifactBytes) : rawContent;
+    const outputRawContent = includeRawContent ? boundedContent : undefined;
+    const outputTruncated = includeRawContent ? truncated : false;
     const contentHash = computeContentHash(rawContent);
     const source = okSource({
       originKind: "local-file",
@@ -95,21 +97,22 @@ function resolveLocalFile(reference: string, maxArtifactBytes: number): ResolveA
       renderedContentAvailability: false,
       exactValidationCapability: "available",
       exactValidationBlockedBySourceForm: false,
-      rawContent: boundedContent,
+      rawContent: outputRawContent,
       contentHash,
-      rawReadNeededForNextStep: false,
-      warnings: truncated ? ["artifact-bytes-truncated"] : []
+      rawReadNeededForNextStep: !includeRawContent,
+      warnings: outputTruncated ? ["artifact-bytes-truncated"] : []
     });
     return {
       ...createOutputMetadata("resolveArtifact"),
+      compatibilityNotes: includeRawContent ? undefined : ["Raw source is omitted by default; request includeRawContent to access bounded raw content."],
       status: "ok",
       source,
       artifact: createIdentity({ normalizedReference: normalizedPath, identityFamilyKey: normalizedPath, contentHash, provisional: true }),
-      complete: !truncated,
-      rawReadNeededForNextStep: false,
+      complete: !outputTruncated,
+      rawReadNeededForNextStep: !includeRawContent,
       budgets: {
-        truncated,
-        exhausted: truncated ? ["maxArtifactBytes"] : []
+        truncated: outputTruncated,
+        exhausted: outputTruncated ? ["maxArtifactBytes"] : []
       }
     };
   } catch {
@@ -137,7 +140,7 @@ function resolveLocalFile(reference: string, maxArtifactBytes: number): ResolveA
   }
 }
 
-function resolveGitHubReference(reference: string, maxArtifactBytes: number): ResolveArtifactResult | undefined {
+function resolveGitHubReference(reference: string, maxArtifactBytes: number, includeRawContent: boolean | undefined): ResolveArtifactResult | undefined {
   const blobMatch = reference.match(GITHUB_BLOB_RE);
   const rawMatch = reference.match(GITHUB_RAW_RE);
   if (!blobMatch && !rawMatch) {
@@ -159,6 +162,8 @@ function resolveGitHubReference(reference: string, maxArtifactBytes: number): Re
     const rawContent = readFileSync(localFileCandidate, "utf8");
     const truncated = Buffer.byteLength(rawContent, "utf8") > maxArtifactBytes;
     const boundedContent = truncated ? rawContent.slice(0, maxArtifactBytes) : rawContent;
+    const outputRawContent = includeRawContent ? boundedContent : undefined;
+    const outputTruncated = includeRawContent ? truncated : false;
     const contentHash = computeContentHash(rawContent);
     const rawAvailability: RawContentAvailability = maybeBlob === "blob" ? "available" : "available";
     const exactValidationCapability: ExactValidationCapability = "available";
@@ -176,22 +181,25 @@ function resolveGitHubReference(reference: string, maxArtifactBytes: number): Re
       renderedContentAvailability: Boolean(blobMatch),
       exactValidationCapability,
       exactValidationBlockedBySourceForm: false,
-      rawContent: boundedContent,
+      rawContent: outputRawContent,
       contentHash,
-      rawReadNeededForNextStep: false,
-      warnings: truncated ? ["artifact-bytes-truncated"] : []
+      rawReadNeededForNextStep: !includeRawContent,
+      warnings: outputTruncated ? ["artifact-bytes-truncated"] : []
     });
     return {
       ...createOutputMetadata("resolveArtifact"),
-      compatibilityNotes: ["GitHub references are currently resolved via a local mirror, not by remote fetch."],
+      compatibilityNotes: [
+        "GitHub references are currently resolved via a local mirror, not by remote fetch.",
+        ...(!includeRawContent ? ["Raw source is omitted by default; request includeRawContent to access bounded raw content."] : [])
+      ],
       status: "ok",
       source,
       artifact: createIdentity({ normalizedReference, immutableSourceIdentity, identityFamilyKey, contentHash, provisional: false }),
-      complete: !truncated,
-      rawReadNeededForNextStep: false,
+      complete: !outputTruncated,
+      rawReadNeededForNextStep: !includeRawContent,
       budgets: {
-        truncated,
-        exhausted: truncated ? ["maxArtifactBytes"] : []
+        truncated: outputTruncated,
+        exhausted: outputTruncated ? ["maxArtifactBytes"] : []
       }
     };
   } catch {
@@ -227,7 +235,7 @@ function resolveGitHubReference(reference: string, maxArtifactBytes: number): Re
 
 export function resolveArtifact(input: ResolveArtifactInput): ResolveArtifactResult {
   const maxArtifactBytes = input.maxArtifactBytes ?? 128_000;
-  const githubResult = resolveGitHubReference(input.reference, maxArtifactBytes);
+  const githubResult = resolveGitHubReference(input.reference, maxArtifactBytes, input.includeRawContent);
   if (githubResult) {
     return githubResult;
   }
@@ -251,5 +259,5 @@ export function resolveArtifact(input: ResolveArtifactInput): ResolveArtifactRes
       budgets: { truncated: false, exhausted: [] }
     };
   }
-  return resolveLocalFile(input.reference, maxArtifactBytes);
+  return resolveLocalFile(input.reference, maxArtifactBytes, input.includeRawContent);
 }

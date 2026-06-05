@@ -29,7 +29,7 @@ export { getNodeChildren } from "./getNodeChildren";
 export * from "@tiinex/lineage-bridge-core";
 
 export function readEnvelope(input: ReadEnvelopeInput): ReadEnvelopeResult {
-  const resolved = resolveArtifact(input);
+  const resolved = resolveArtifact({ ...input, includeRawContent: true });
   if (!resolved.source.rawContent) {
     return {
       ...createOutputMetadata("readEnvelope"),

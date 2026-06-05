@@ -10,9 +10,19 @@ test("resolveArtifact reads a local Tiinex artifact", () => {
   assert.equal(result.status, "ok");
   assert.equal(result.source.accessStatus, "readable");
   assert.equal(result.source.rawContentAvailability, "available");
+  assert.equal(result.source.rawContent, undefined);
+  assert.equal(result.rawReadNeededForNextStep, true);
   assert.ok(result.artifact.canonicalArtifactId);
-  assert.equal(result.compatibilityNotes, undefined);
+  assert.ok(result.compatibilityNotes?.includes("Raw source is omitted by default; request includeRawContent to access bounded raw content."));
   assert.ok(result.source.warnings.every((warning) => !warning.includes("local-mirror")));
+});
+
+test("resolveArtifact returns bounded raw content only when explicitly requested", () => {
+  const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "kickstarter", "001.trace.md");
+  const result = resolveArtifact({ reference, includeRawContent: true });
+  assert.equal(result.status, "ok");
+  assert.equal(typeof result.source.rawContent, "string");
+  assert.equal(result.rawReadNeededForNextStep, false);
 });
 
 test("resolveArtifact collapses equivalent GitHub blob and raw references onto the same canonical artifact id", () => {
@@ -265,6 +275,19 @@ test("getNodeChildren returns direct children with pagination support", () => {
   assert.equal(result.children.length, 1);
   assert.equal(result.children[0]?.schemaId, "tiinex.task.v1");
   assert.deepEqual(result.missingOrUnreadableChildren, []);
+});
+
+test("getNodeChildren still resolves a node that would be excluded by paginating the tree projection first", () => {
+  const artifactA = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "memes", "work", "remote", "001-1-echo-cloud-handoff.trace.md");
+  const artifactB = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "memes", "work", "remote", "001.trace.md");
+  const fullProjection = getTreeProjection({ references: [artifactA, artifactB], sortBy: "label" });
+  const parentNode = fullProjection.nodes.find((node) => node.childNodeIds.length > 0);
+  assert.ok(parentNode);
+  const excludingPage = [1, 2].find((page) => !getTreeProjection({ references: [artifactA, artifactB], sortBy: "label", page, pageSize: 1 }).nodes.some((node) => node.nodeId === parentNode!.nodeId));
+  assert.ok(excludingPage);
+  const result = getNodeChildren({ references: [artifactA, artifactB], nodeId: parentNode!.nodeId, page: excludingPage, pageSize: 1, sortBy: "label" });
+  assert.equal(result.status, "incomplete");
+  assert.equal(result.totalChildren, 1);
 });
 
 test("resolveArtifact is explicit when a GitHub reference is not available through the local mirror", () => {

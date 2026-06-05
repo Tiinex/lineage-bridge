@@ -50,6 +50,7 @@ Implemented in repo now:
 * first `getStructureIndex` projection with canonical-id dedupe, parent edges, origin candidates, validation summaries, and bounded explicit-reference indexing
 * first `getTreeProjection`, `getNodeDetails`, and `getNodeChildren` projections built as thin layers above the shared index and envelope/validation outputs
 * GitHub blob/raw references with matching immutable identity evidence now collapse onto one canonical artifact id in shared source/core flows
+* `resolveArtifact` is now metadata-first by default and only returns bounded raw source when explicitly requested
 * build and regression tests for `resolveArtifact`, `readEnvelope`, `validateArtifact`, `getLineage`, `getHandoffPacket`, `getRelevantSlice`, `getSchemaContract`, `getValidationOverlay`, `getAvailableActions`, `getStructureIndex`, `getTreeProjection`, `getNodeDetails`, and `getNodeChildren`
 
 Still intentionally incomplete:
@@ -1456,7 +1457,7 @@ DoD:
 * [x] Parse continuity integrity footer.
 * [x] Preserve unknown fields.
 * [x] Do not guess unsupported schema payloads.
-* [ ] Require raw source for exact syntax parsing.
+* [x] Require raw source for exact syntax parsing.
 
 ### Phase 4 — Contract Parsing
 
@@ -1483,11 +1484,11 @@ DoD:
 
 ### Phase 6 — Canonical Identity And Cache Basis
 
-* [ ] Compute canonical artifact id.
-* [ ] Track aliases.
-* [ ] Detect alias conflicts.
-* [ ] Use content hash when available.
-* [ ] Represent provisional identity for mutable origins.
+* [x] Compute canonical artifact id.
+* [x] Track aliases.
+* [x] Detect alias conflicts.
+* [x] Use content hash when available.
+* [x] Represent provisional identity for mutable origins.
 * [ ] Provide cache-safe identity fields.
 
 ### Phase 7 — Lineage Traversal
@@ -1504,9 +1505,9 @@ DoD:
 ### Phase 8 — Projections
 
 * [x] Implement structure index.
-* [ ] Implement tree projection.
-* [ ] Implement node details.
-* [ ] Implement node children.
+* [x] Implement tree projection.
+* [x] Implement node details.
+* [x] Implement node children.
 * [x] Implement validation overlay.
 * [x] Implement available actions from core policy.
 * [x] Keep projections UI-neutral.
@@ -1552,7 +1553,7 @@ This milestone is done when:
 * [x] Raw content is used for syntax validation.
 * [x] Rendered-only access blocks exact validation.
 * [ ] Unknown, unavailable, invalid, unsupported, blocked, and incomplete states are distinct.
-* [ ] Full artifact body is opt-in.
+* [x] Full artifact body is opt-in.
 * [x] Operational budgets exist and are reported when reached.
 * [x] Output shape metadata exists on public tool outputs.
 * [x] A compact handoff packet can orient a fresh chat.

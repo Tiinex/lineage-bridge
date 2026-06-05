@@ -26,10 +26,10 @@ function uniqueItems(items: string[]): string[] {
 }
 
 export function getSchemaContract(input: GetSchemaContractInput): GetSchemaContractResult {
-  const artifact = resolveArtifact(input);
+  const artifact = resolveArtifact({ ...input, includeRawContent: true });
   const envelope = artifact.source.rawContent ? parseContinuityEnvelope(artifact.source.rawContent) : undefined;
   const schemaReference = resolveSchemaReference({ source: artifact.source, envelope });
-  const schemaResult = schemaReference ? resolveArtifact({ reference: schemaReference, maxArtifactBytes: input.maxArtifactBytes }) : undefined;
+  const schemaResult = schemaReference ? resolveArtifact({ reference: schemaReference, maxArtifactBytes: input.maxArtifactBytes, includeRawContent: true }) : undefined;
 
   if (!schemaResult?.source.rawContent) {
     return {

@@ -97,7 +97,7 @@ function asSupportedSchemaId(schemaId: string | undefined): SupportedSchemaId | 
 }
 
 export function validateArtifact(input: ValidateArtifactInput): ValidateArtifactResult {
-  const resolved = resolveArtifact(input);
+  const resolved = resolveArtifact({ ...input, includeRawContent: true });
   const compatibilityNotes = ["initial validator coverage: continuity envelope only"];
   if (!resolved.source.rawContent) {
     return {

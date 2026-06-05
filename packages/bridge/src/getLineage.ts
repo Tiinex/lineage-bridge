@@ -85,7 +85,7 @@ export function getLineage(input: GetLineageInput): GetLineageResult {
       exhausted.push("maxFetches");
       break;
     }
-    const resolved = resolveArtifact({ reference: currentReference, maxArtifactBytes });
+    const resolved = resolveArtifact({ reference: currentReference, maxArtifactBytes, includeRawContent: true });
     fetches += 1;
     lastArtifact = resolved.artifact;
 

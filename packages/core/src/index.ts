@@ -461,6 +461,7 @@ export interface GetLineageResult extends BridgeOutputMetadata {
 export interface ResolveArtifactInput {
   reference: string;
   maxArtifactBytes?: number;
+  includeRawContent?: boolean;
 }
 
 export interface ReadEnvelopeInput extends ResolveArtifactInput {}

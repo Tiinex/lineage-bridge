@@ -6,7 +6,7 @@ import { getLineage } from "./getLineage";
 import { getIntentionallyExcluded, selectRelevantSlices } from "./selectRelevantSlices";
 
 export function getRelevantSlice(input: GetRelevantSliceInput): GetRelevantSliceResult {
-  const resolved = resolveArtifact(input);
+  const resolved = resolveArtifact({ ...input, includeRawContent: true });
   const validation = validateArtifact(input);
   const lineage = getLineage(input);
   const envelope = resolved.source.rawContent ? parseContinuityEnvelope(resolved.source.rawContent) : undefined;
