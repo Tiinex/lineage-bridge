@@ -1,19 +1,39 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import {
   type ArtifactIdentity,
+  type BridgeTopLevelStatus,
   type ExactValidationCapability,
   type OriginAccessStatus,
   type RawContentAvailability,
+  type RemoteFetchRequest,
+  type RemoteFetchResponse,
   type ResolveArtifactInput,
   type ResolveArtifactResult,
   type ResolvedArtifactSource,
   createOutputMetadata
 } from "@tiinex/lineage-bridge-core";
 
-const GITHUB_BLOB_RE = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/(blob)\/([0-9a-f]{7,40})\/(.+)$/iu;
-const GITHUB_RAW_RE = /^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([0-9a-f]{7,40})\/(.+)$/iu;
+const GITHUB_BLOB_RE = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/(blob)\/([^/]+)\/(.+)$/iu;
+const GITHUB_RAW_RE = /^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/iu;
+const GITHUB_COMMIT_RE = /^[0-9a-f]{7,40}$/iu;
+
+interface ParsedGitHubReference {
+  owner: string;
+  repo: string;
+  revision: string;
+  relativePath: string;
+  refKind: "commit" | "branch";
+  originKind: "github-blob" | "github-raw";
+  normalizedReference: string;
+  immutableSourceIdentity?: string;
+  identityFamilyKey: string;
+  rawFetchUrl: string;
+  renderedContentAvailability: boolean;
+  immutable: boolean;
+  mutability: "immutable" | "mutable";
+}
 
 function computeContentHash(rawContent: string): string {
   return createHash("sha256").update(rawContent, "utf8").digest("base64url");
@@ -84,6 +104,42 @@ function createGitHubIdentityFamilyKey(owner: string, repo: string, relativePath
   return `github:${owner.toLowerCase()}/${repo.toLowerCase()}:${relativePath}`;
 }
 
+function classifyGitHubRefKind(revision: string): "commit" | "branch" {
+  return GITHUB_COMMIT_RE.test(revision) ? "commit" : "branch";
+}
+
+function parseGitHubReference(reference: string): ParsedGitHubReference | undefined {
+  const blobMatch = reference.match(GITHUB_BLOB_RE);
+  const rawMatch = reference.match(GITHUB_RAW_RE);
+  if (!blobMatch && !rawMatch) {
+    return undefined;
+  }
+
+  const owner = blobMatch ? blobMatch[1] : rawMatch![1];
+  const repo = blobMatch ? blobMatch[2] : rawMatch![2];
+  const revision = blobMatch ? blobMatch[4] : rawMatch![3];
+  const relativePath = blobMatch ? blobMatch[5] : rawMatch![4];
+  const originKind = blobMatch ? "github-blob" : "github-raw";
+  const refKind = classifyGitHubRefKind(revision);
+  const immutable = refKind === "commit";
+
+  return {
+    owner,
+    repo,
+    revision,
+    relativePath,
+    refKind,
+    originKind,
+    normalizedReference: `https://github.com/${owner}/${repo}/blob/${revision}/${relativePath}`,
+    immutableSourceIdentity: immutable ? createGitHubImmutableIdentity(owner, repo, revision, relativePath) : undefined,
+    identityFamilyKey: createGitHubIdentityFamilyKey(owner, repo, relativePath),
+    rawFetchUrl: `https://raw.githubusercontent.com/${owner}/${repo}/${revision}/${relativePath}`,
+    renderedContentAvailability: originKind === "github-blob",
+    immutable,
+    mutability: immutable ? "immutable" : "mutable"
+  };
+}
+
 function okSource(partial: Partial<ResolvedArtifactSource>): ResolvedArtifactSource {
   return {
     sourceStrategy: partial.sourceStrategy ?? "unsupported",
@@ -110,15 +166,15 @@ function okSource(partial: Partial<ResolvedArtifactSource>): ResolvedArtifactSou
   };
 }
 
-function getContractUpgradeNotes(input: ResolveArtifactInput): string[] {
+function getContractUpgradeNotes(input: ResolveArtifactInput, activeGitHubStrategy: "scaffold" | "remote" = "scaffold"): string[] {
   const notes: string[] = [];
   if (input.sourceAccess?.workspace) {
-    notes.push("Workspace access policy shape is accepted but is not enforced until the local sandbox phase.");
+    notes.push("Workspace access policy is enforced for direct local artifact reads; broader local traversal hardening remains part of the sandbox phase.");
   }
-  if (input.sourceAccess?.preferredGitHubStrategy === "remote" || input.sourceAccess?.remoteFetcher) {
+  if (activeGitHubStrategy === "scaffold" && (input.sourceAccess?.preferredGitHubStrategy === "remote" || input.sourceAccess?.remoteFetcher)) {
     notes.push("Remote GitHub fetch contract is declared but current resolution still uses the existing local mirror path.");
   }
-  if (input.sourceAccess?.network) {
+  if (input.sourceAccess?.network && activeGitHubStrategy === "scaffold") {
     notes.push("Remote network budget shapes are accepted for future source strategies but are not enforced by the current local scaffold.");
   }
   if (input.sourceAccess?.freshOriginResolution) {
@@ -127,10 +183,168 @@ function getContractUpgradeNotes(input: ResolveArtifactInput): string[] {
   return notes;
 }
 
+function isWithinRoot(candidatePath: string, rootPath: string): boolean {
+  const normalizedCandidate = path.resolve(candidatePath);
+  const normalizedRoot = path.resolve(rootPath);
+  return normalizedCandidate === normalizedRoot || normalizedCandidate.startsWith(`${normalizedRoot}${path.sep}`);
+}
+
+function evaluateWorkspaceAccess(input: ResolveArtifactInput, normalizedPath: string): {
+  blocked: boolean;
+  accessStatus?: OriginAccessStatus;
+  warning?: string;
+  workspacePolicyEnforced: boolean;
+} {
+  const workspace = input.sourceAccess?.workspace;
+  if (!workspace) {
+    return { blocked: false, workspacePolicyEnforced: false };
+  }
+
+  const roots = workspace.roots.map((root) => path.resolve(root));
+  const allowOutsideRoots = workspace.allowOutsideRoots === true;
+  const pathWithinRoots = roots.some((root) => isWithinRoot(normalizedPath, root));
+  if (!pathWithinRoots && !allowOutsideRoots) {
+    return {
+      blocked: true,
+      accessStatus: "unauthorized",
+      warning: "workspace-root-blocked",
+      workspacePolicyEnforced: true
+    };
+  }
+
+  if (!workspace.symlinkPolicy || workspace.symlinkPolicy === "follow") {
+    return { blocked: false, workspacePolicyEnforced: true };
+  }
+
+  try {
+    const resolvedRealPath = realpathSync(normalizedPath);
+    const usesSymlink = path.resolve(resolvedRealPath) !== normalizedPath;
+    if (workspace.symlinkPolicy === "error" && usesSymlink) {
+      return {
+        blocked: true,
+        accessStatus: "unauthorized",
+        warning: "workspace-symlink-blocked",
+        workspacePolicyEnforced: true
+      };
+    }
+    if (workspace.symlinkPolicy === "within-workspace") {
+      const realPathWithinRoots = roots.some((root) => isWithinRoot(resolvedRealPath, root));
+      if (!realPathWithinRoots && !allowOutsideRoots) {
+        return {
+          blocked: true,
+          accessStatus: "unauthorized",
+          warning: "workspace-symlink-outside-root-blocked",
+          workspacePolicyEnforced: true
+        };
+      }
+    }
+  } catch {
+    return { blocked: false, workspacePolicyEnforced: true };
+  }
+
+  return { blocked: false, workspacePolicyEnforced: true };
+}
+
+function mapRemoteFailure(response: RemoteFetchResponse): { status: BridgeTopLevelStatus; accessStatus: OriginAccessStatus; warning: string } {
+  if (response.errorCode === "not-found" || response.status === 404) {
+    return { status: "unavailable", accessStatus: "not-found", warning: "github-remote-not-found" };
+  }
+  if (response.errorCode === "unauthorized" || response.status === 401 || response.status === 403) {
+    return { status: "blocked", accessStatus: "unauthorized", warning: "github-remote-unauthorized" };
+  }
+  if (response.errorCode === "timeout") {
+    return { status: "blocked", accessStatus: "network-failure", warning: "github-remote-timeout" };
+  }
+  if (response.errorCode === "rate-limited" || response.status === 429) {
+    return { status: "blocked", accessStatus: "network-failure", warning: "github-remote-rate-limited" };
+  }
+  return { status: "blocked", accessStatus: "network-failure", warning: "github-remote-network-failure" };
+}
+
+async function defaultRemoteFetcher(request: RemoteFetchRequest): Promise<RemoteFetchResponse> {
+  const controller = new AbortController();
+  const timeoutMs = request.timeoutMs;
+  const timeoutHandle = typeof timeoutMs === "number" && timeoutMs > 0
+    ? setTimeout(() => controller.abort(), timeoutMs)
+    : undefined;
+
+  try {
+    const response = await fetch(request.url, {
+      headers: request.headers,
+      redirect: "follow",
+      signal: controller.signal
+    });
+    const headers: Record<string, string> = {};
+    response.headers.forEach((value, key) => {
+      headers[key] = value;
+    });
+    return {
+      ok: response.ok,
+      status: response.status,
+      bodyText: await response.text(),
+      finalUrl: response.url,
+      headers,
+      errorCode: response.ok
+        ? undefined
+        : response.status === 404
+          ? "not-found"
+          : response.status === 401 || response.status === 403
+            ? "unauthorized"
+            : response.status === 429
+              ? "rate-limited"
+              : undefined
+    };
+  } catch (error) {
+    const isAbort = error instanceof Error && error.name === "AbortError";
+    return {
+      ok: false,
+      status: 0,
+      errorCode: isAbort ? "timeout" : "network-failure"
+    };
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+}
+
 function resolveLocalFile(input: ResolveArtifactInput, maxArtifactBytes: number): ResolveArtifactResult {
   const { reference, includeRawContent } = input;
   const normalizedPath = path.resolve(reference);
   const contractNotes = getContractUpgradeNotes(input);
+  const workspaceAccess = evaluateWorkspaceAccess(input, normalizedPath);
+  if (workspaceAccess.blocked) {
+    const source = okSource({
+      sourceStrategy: "local-workspace",
+      trustLevel: "workspace-local",
+      refKind: "not-applicable",
+      workspacePolicyEnforced: workspaceAccess.workspacePolicyEnforced,
+      originKind: "local-file",
+      inputReference: reference,
+      normalizedReference: normalizedPath,
+      path: normalizedPath,
+      versioned: false,
+      immutable: false,
+      mutability: "mutable",
+      accessStatus: workspaceAccess.accessStatus ?? "unauthorized",
+      rawContentAvailability: "unavailable",
+      renderedContentAvailability: false,
+      exactValidationCapability: "blocked",
+      exactValidationBlockedBySourceForm: true,
+      rawReadNeededForNextStep: true,
+      warnings: workspaceAccess.warning ? [workspaceAccess.warning] : []
+    });
+    return {
+      ...createOutputMetadata("resolveArtifact"),
+      compatibilityNotes: contractNotes.length > 0 ? contractNotes : undefined,
+      status: "blocked",
+      source,
+      artifact: createIdentity({ normalizedReference: normalizedPath, identityFamilyKey: normalizedPath, provisional: true }),
+      complete: false,
+      rawReadNeededForNextStep: true,
+      budgets: { truncated: false, exhausted: [] }
+    };
+  }
   try {
     const rawContent = readFileSync(normalizedPath, "utf8");
     const truncated = Buffer.byteLength(rawContent, "utf8") > maxArtifactBytes;
@@ -142,7 +356,7 @@ function resolveLocalFile(input: ResolveArtifactInput, maxArtifactBytes: number)
       sourceStrategy: "local-workspace",
       trustLevel: "workspace-local",
       refKind: "not-applicable",
-      workspacePolicyEnforced: false,
+      workspacePolicyEnforced: workspaceAccess.workspacePolicyEnforced,
       originKind: "local-file",
       inputReference: reference,
       normalizedReference: normalizedPath,
@@ -186,7 +400,7 @@ function resolveLocalFile(input: ResolveArtifactInput, maxArtifactBytes: number)
       sourceStrategy: "local-workspace",
       trustLevel: "workspace-local",
       refKind: "not-applicable",
-      workspacePolicyEnforced: false,
+      workspacePolicyEnforced: workspaceAccess.workspacePolicyEnforced,
       originKind: "local-file",
       inputReference: reference,
       normalizedReference: normalizedPath,
@@ -213,23 +427,12 @@ function resolveLocalFile(input: ResolveArtifactInput, maxArtifactBytes: number)
 
 function resolveGitHubReference(input: ResolveArtifactInput, maxArtifactBytes: number): ResolveArtifactResult | undefined {
   const { reference, includeRawContent } = input;
-  const blobMatch = reference.match(GITHUB_BLOB_RE);
-  const rawMatch = reference.match(GITHUB_RAW_RE);
-  if (!blobMatch && !rawMatch) {
+  const parsed = parseGitHubReference(reference);
+  if (!parsed) {
     return undefined;
   }
-  const owner = blobMatch ? blobMatch[1] : rawMatch![1];
-  const repo = blobMatch ? blobMatch[2] : rawMatch![2];
-  const maybeBlob = blobMatch ? blobMatch[3] : undefined;
-  const revision = blobMatch ? blobMatch[4] : rawMatch![3];
-  const relativePath = blobMatch ? blobMatch[5] : rawMatch![4];
-  const normalizedReference = blobMatch
-    ? `https://github.com/${owner}/${repo}/blob/${revision}/${relativePath}`
-    : `https://raw.githubusercontent.com/${owner}/${repo}/${revision}/${relativePath}`;
-  const immutableSourceIdentity = createGitHubImmutableIdentity(owner, repo, revision, relativePath);
-  const identityFamilyKey = createGitHubIdentityFamilyKey(owner, repo, relativePath);
-  const localRepoCandidate = path.resolve(path.dirname(process.cwd()), repo);
-  const localFileCandidate = path.resolve(localRepoCandidate, ...relativePath.split("/"));
+  const localRepoCandidate = path.resolve(path.dirname(process.cwd()), parsed.repo);
+  const localFileCandidate = path.resolve(localRepoCandidate, ...parsed.relativePath.split("/"));
   const contractNotes = getContractUpgradeNotes(input);
   try {
     const rawContent = readFileSync(localFileCandidate, "utf8");
@@ -238,24 +441,24 @@ function resolveGitHubReference(input: ResolveArtifactInput, maxArtifactBytes: n
     const outputRawContent = includeRawContent ? boundedContent : undefined;
     const outputTruncated = includeRawContent ? truncated : false;
     const contentHash = computeContentHash(rawContent);
-    const rawAvailability: RawContentAvailability = maybeBlob === "blob" ? "available" : "available";
+    const rawAvailability: RawContentAvailability = "available";
     const exactValidationCapability: ExactValidationCapability = "available";
     const source = okSource({
       sourceStrategy: "github-local-mirror",
       trustLevel: "local-mirror",
-      refKind: "commit",
+      refKind: parsed.refKind,
       workspacePolicyEnforced: false,
-      originKind: blobMatch ? "github-blob" : "github-raw",
+      originKind: parsed.originKind,
       inputReference: reference,
-      normalizedReference,
-      path: relativePath,
-      ref: revision,
+      normalizedReference: parsed.normalizedReference,
+      path: parsed.relativePath,
+      ref: parsed.revision,
       versioned: true,
-      immutable: true,
-      mutability: "immutable",
+      immutable: parsed.immutable,
+      mutability: parsed.mutability,
       accessStatus: "readable",
       rawContentAvailability: rawAvailability,
-      renderedContentAvailability: Boolean(blobMatch),
+      renderedContentAvailability: parsed.renderedContentAvailability,
       exactValidationCapability,
       exactValidationBlockedBySourceForm: false,
       rawContent: outputRawContent,
@@ -272,7 +475,7 @@ function resolveGitHubReference(input: ResolveArtifactInput, maxArtifactBytes: n
       ],
       status: "ok",
       source,
-      artifact: createIdentity({ normalizedReference, immutableSourceIdentity, identityFamilyKey, contentHash, provisional: false }),
+      artifact: createIdentity({ normalizedReference: parsed.normalizedReference, immutableSourceIdentity: parsed.immutableSourceIdentity, identityFamilyKey: parsed.identityFamilyKey, contentHash, provisional: false }),
       complete: !outputTruncated,
       rawReadNeededForNextStep: !includeRawContent,
       budgets: {
@@ -284,19 +487,19 @@ function resolveGitHubReference(input: ResolveArtifactInput, maxArtifactBytes: n
     const source = okSource({
       sourceStrategy: "github-local-mirror",
       trustLevel: "local-mirror",
-      refKind: "commit",
+      refKind: parsed.refKind,
       workspacePolicyEnforced: false,
-      originKind: blobMatch ? "github-blob" : "github-raw",
+      originKind: parsed.originKind,
       inputReference: reference,
-      normalizedReference,
-      path: relativePath,
-      ref: revision,
+      normalizedReference: parsed.normalizedReference,
+      path: parsed.relativePath,
+      ref: parsed.revision,
       versioned: true,
-      immutable: true,
-      mutability: "immutable",
+      immutable: parsed.immutable,
+      mutability: parsed.mutability,
       accessStatus: "not-found",
-      rawContentAvailability: blobMatch ? "rendered-only" : "unavailable",
-      renderedContentAvailability: Boolean(blobMatch),
+      rawContentAvailability: parsed.renderedContentAvailability ? "rendered-only" : "unavailable",
+      renderedContentAvailability: parsed.renderedContentAvailability,
       exactValidationCapability: "blocked",
       exactValidationBlockedBySourceForm: true,
       rawReadNeededForNextStep: true,
@@ -307,12 +510,125 @@ function resolveGitHubReference(input: ResolveArtifactInput, maxArtifactBytes: n
       compatibilityNotes: ["GitHub references are currently resolved via a local mirror, not by remote fetch.", ...contractNotes],
       status: "blocked",
       source,
-      artifact: createIdentity({ normalizedReference, immutableSourceIdentity, identityFamilyKey, provisional: false }),
+      artifact: createIdentity({ normalizedReference: parsed.normalizedReference, immutableSourceIdentity: parsed.immutableSourceIdentity, identityFamilyKey: parsed.identityFamilyKey, provisional: false }),
       complete: false,
       rawReadNeededForNextStep: true,
       budgets: { truncated: false, exhausted: [] }
     };
   }
+}
+
+async function resolveGitHubReferenceRemotely(input: ResolveArtifactInput, maxArtifactBytes: number): Promise<ResolveArtifactResult | undefined> {
+  const parsed = parseGitHubReference(input.reference);
+  if (!parsed) {
+    return undefined;
+  }
+
+  const remoteFetcher = input.sourceAccess?.remoteFetcher ?? defaultRemoteFetcher;
+  const response = await remoteFetcher({
+    url: parsed.rawFetchUrl,
+    timeoutMs: input.sourceAccess?.network?.requestTimeoutMs,
+    headers: {
+      accept: "text/plain, text/markdown;q=0.9, */*;q=0.1"
+    }
+  });
+  const contractNotes = getContractUpgradeNotes(input, "remote");
+
+  if (!response.ok || typeof response.bodyText !== "string") {
+    const failure = mapRemoteFailure(response);
+    return {
+      ...createOutputMetadata("resolveArtifact"),
+      compatibilityNotes: contractNotes.length > 0 ? contractNotes : undefined,
+      status: failure.status,
+      source: okSource({
+        sourceStrategy: "github-remote",
+        trustLevel: "remote-public",
+        refKind: parsed.refKind,
+        workspacePolicyEnforced: false,
+        originKind: parsed.originKind,
+        inputReference: input.reference,
+        normalizedReference: parsed.normalizedReference,
+        path: parsed.relativePath,
+        ref: parsed.revision,
+        versioned: true,
+        immutable: parsed.immutable,
+        mutability: parsed.mutability,
+        accessStatus: failure.accessStatus,
+        rawContentAvailability: parsed.renderedContentAvailability ? "rendered-only" : "unavailable",
+        renderedContentAvailability: parsed.renderedContentAvailability,
+        exactValidationCapability: "blocked",
+        exactValidationBlockedBySourceForm: true,
+        rawReadNeededForNextStep: true,
+        warnings: [failure.warning]
+      }),
+      artifact: createIdentity({
+        normalizedReference: parsed.normalizedReference,
+        immutableSourceIdentity: parsed.immutableSourceIdentity,
+        identityFamilyKey: parsed.identityFamilyKey,
+        provisional: false
+      }),
+      complete: false,
+      rawReadNeededForNextStep: true,
+      budgets: { truncated: false, exhausted: [] }
+    };
+  }
+
+  const rawContent = response.bodyText;
+  const truncated = Buffer.byteLength(rawContent, "utf8") > maxArtifactBytes;
+  const boundedContent = truncated ? rawContent.slice(0, maxArtifactBytes) : rawContent;
+  const outputRawContent = input.includeRawContent ? boundedContent : undefined;
+  const outputTruncated = input.includeRawContent ? truncated : false;
+  const contentHash = computeContentHash(rawContent);
+
+  return {
+    ...createOutputMetadata("resolveArtifact"),
+    compatibilityNotes: [
+      ...(!input.includeRawContent ? ["Raw source is omitted by default; request includeRawContent to access bounded raw content."] : []),
+      ...contractNotes
+    ].length > 0
+      ? [
+          ...(!input.includeRawContent ? ["Raw source is omitted by default; request includeRawContent to access bounded raw content."] : []),
+          ...contractNotes
+        ]
+      : undefined,
+    status: "ok",
+    source: okSource({
+      sourceStrategy: "github-remote",
+      trustLevel: "remote-public",
+      refKind: parsed.refKind,
+      workspacePolicyEnforced: false,
+      originKind: parsed.originKind,
+      inputReference: input.reference,
+      normalizedReference: parsed.normalizedReference,
+      path: parsed.relativePath,
+      ref: parsed.revision,
+      versioned: true,
+      immutable: parsed.immutable,
+      mutability: parsed.mutability,
+      accessStatus: "readable",
+      rawContentAvailability: "available",
+      renderedContentAvailability: parsed.renderedContentAvailability,
+      exactValidationCapability: "available",
+      exactValidationBlockedBySourceForm: false,
+      rawContent: outputRawContent,
+      contentHash,
+      rawReadNeededForNextStep: !input.includeRawContent,
+      warnings: outputTruncated ? ["artifact-bytes-truncated"] : []
+    }),
+    artifact: createIdentity({
+      normalizedReference: parsed.normalizedReference,
+      immutableSourceIdentity: parsed.immutableSourceIdentity,
+      identityFamilyKey: parsed.identityFamilyKey,
+      contentHash,
+      provisional: false
+    }),
+    complete: !outputTruncated,
+    rawReadNeededForNextStep: !input.includeRawContent,
+    budgets: {
+      truncated: outputTruncated,
+      exhausted: outputTruncated ? ["maxArtifactBytes"] : []
+    }
+  };
 }
 
 export function resolveArtifact(input: ResolveArtifactInput): ResolveArtifactResult {
@@ -351,5 +667,11 @@ export function resolveArtifact(input: ResolveArtifactInput): ResolveArtifactRes
 }
 
 export async function resolveArtifactAsync(input: ResolveArtifactInput): Promise<ResolveArtifactResult> {
+  if (input.sourceAccess?.preferredGitHubStrategy !== "local-mirror") {
+    const remoteGitHubResult = await resolveGitHubReferenceRemotely(input, input.maxArtifactBytes ?? 128_000);
+    if (remoteGitHubResult) {
+      return remoteGitHubResult;
+    }
+  }
   return resolveArtifact(input);
 }

@@ -1,7 +1,9 @@
 import path from "node:path";
 import { type ContinuityEnvelope, type GetSchemaContractInput, type GetSchemaContractResult, createOutputMetadata } from "@tiinex/lineage-bridge-core";
 import { parseContinuityEnvelope, parseSchemaContracts } from "@tiinex/lineage-bridge-parsers";
-import { resolveArtifact } from "@tiinex/lineage-bridge-sources";
+import { resolveArtifact, resolveArtifactAsync } from "@tiinex/lineage-bridge-sources";
+
+const GITHUB_BLOB_SOURCE_RE = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/iu;
 
 function getSchemaId(reference: ContinuityEnvelope["currentSchema"]): string | undefined {
   return reference?.label ?? reference?.target;
@@ -18,6 +20,14 @@ function resolveSchemaReference(input: { source: ReturnType<typeof resolveArtifa
   if (input.source.originKind === "local-file" && input.source.normalizedReference) {
     return path.resolve(path.dirname(input.source.normalizedReference), ...target.split("/"));
   }
+  const githubMatch = input.source.normalizedReference?.match(GITHUB_BLOB_SOURCE_RE);
+  if ((input.source.originKind === "github-blob" || input.source.originKind === "github-raw") && githubMatch && input.source.path && input.source.ref) {
+    const owner = githubMatch[1];
+    const repo = githubMatch[2];
+    const artifactDir = path.posix.dirname(input.source.path);
+    const resolvedPath = path.posix.normalize(path.posix.join(artifactDir, target));
+    return `https://github.com/${owner}/${repo}/blob/${input.source.ref}/${resolvedPath}`;
+  }
   return target;
 }
 
@@ -25,35 +35,53 @@ function uniqueItems(items: string[]): string[] {
   return [...new Set(items)];
 }
 
-export function getSchemaContract(input: GetSchemaContractInput): GetSchemaContractResult {
-  const artifact = resolveArtifact({ ...input, includeRawContent: true });
-  const envelope = artifact.source.rawContent ? parseContinuityEnvelope(artifact.source.rawContent) : undefined;
-  const schemaReference = resolveSchemaReference({ source: artifact.source, envelope });
-  const schemaResult = schemaReference ? resolveArtifact({ reference: schemaReference, maxArtifactBytes: input.maxArtifactBytes, includeRawContent: true }) : undefined;
+function detectSchemaMutabilityRisk(input: {
+  artifact: ReturnType<typeof resolveArtifact>;
+  schemaResult?: ReturnType<typeof resolveArtifact>;
+}): boolean {
+  return input.artifact.source.immutable === true && input.schemaResult?.source.versioned === true && input.schemaResult.source.immutable === false;
+}
 
-  if (!schemaResult?.source.rawContent) {
-    return {
-      ...createOutputMetadata("getSchemaContract"),
-      status: "incomplete",
-      contract: {
-        schemaId: getSchemaId(envelope?.currentSchema),
-        validationAuthority: [],
-        generationAuthority: [],
-        integrityAuthority: [],
-        knownCategoryLabels: [],
-        requiredGroups: [],
-        policyGroups: [],
-        schemaSourceReference: schemaReference,
-        schemaContentHash: schemaResult?.artifact.contentHash,
-        unresolved: true
-      },
-      complete: false,
-      rawReadNeededForNextStep: true,
-      budgets: schemaResult?.budgets ?? artifact.budgets
-    };
-  }
+function createSchemaMutabilityRiskNote(input: {
+  artifact: ReturnType<typeof resolveArtifact>;
+  schemaResult: ReturnType<typeof resolveArtifact>;
+}): string {
+  return `Artifact is commit-pinned but the governing schema resolved through a mutable ${input.schemaResult.source.refKind} reference, so schema guidance may drift independently of the artifact.`;
+}
 
-  const contracts = parseSchemaContracts(schemaResult.source.rawContent);
+function createUnresolvedResult(input: {
+  artifact: ReturnType<typeof resolveArtifact>;
+  envelope?: ContinuityEnvelope;
+  schemaReference?: string;
+  schemaResult?: ReturnType<typeof resolveArtifact>;
+}): GetSchemaContractResult {
+  return {
+    ...createOutputMetadata("getSchemaContract"),
+    status: "incomplete",
+    contract: {
+      schemaId: getSchemaId(input.envelope?.currentSchema),
+      validationAuthority: [],
+      generationAuthority: [],
+      integrityAuthority: [],
+      knownCategoryLabels: [],
+      requiredGroups: [],
+      policyGroups: [],
+      schemaSourceReference: input.schemaReference,
+      schemaContentHash: input.schemaResult?.artifact.contentHash,
+      unresolved: true
+    },
+    complete: false,
+    rawReadNeededForNextStep: true,
+    budgets: input.schemaResult?.budgets ?? input.artifact.budgets
+  };
+}
+
+function createResolvedResult(input: {
+  artifact: ReturnType<typeof resolveArtifact>;
+  schemaResult: ReturnType<typeof resolveArtifact>;
+  includeFullContract?: boolean;
+}): GetSchemaContractResult {
+  const contracts = parseSchemaContracts(input.schemaResult.source.rawContent!);
   const validationContract = contracts.schemaValidationContract;
   const artifactCreationContract = contracts.artifactCreationContract;
   const validationAuthority = uniqueItems(validationContract?.groups.flatMap((group) => group.categories.filter((category) => category.label === "Validation Authority").flatMap((category) => category.items)) ?? []);
@@ -69,27 +97,60 @@ export function getSchemaContract(input: GetSchemaContractInput): GetSchemaContr
     ...(artifactCreationContract?.groups.filter((group) => group.categories.some((category) => category.label === "Rules")).map((group) => group.heading) ?? [])
   ]);
 
+  const schemaMutabilityRisk = detectSchemaMutabilityRisk(input);
   return {
     ...createOutputMetadata("getSchemaContract"),
+    compatibilityNotes: schemaMutabilityRisk
+      ? [createSchemaMutabilityRiskNote({ artifact: input.artifact, schemaResult: input.schemaResult })]
+      : undefined,
     status: "ok",
     contract: {
-      schemaId: getSchemaId(parseContinuityEnvelope(schemaResult.source.rawContent).currentSchema),
+      schemaId: getSchemaId(parseContinuityEnvelope(input.schemaResult.source.rawContent!).currentSchema),
       validationAuthority,
       generationAuthority,
       integrityAuthority,
       knownCategoryLabels,
       requiredGroups,
       policyGroups,
-      schemaSourceReference: schemaResult.source.normalizedReference ?? schemaResult.source.inputReference,
-      schemaContentHash: schemaResult.artifact.contentHash,
+      schemaSourceReference: input.schemaResult.source.normalizedReference ?? input.schemaResult.source.inputReference,
+      schemaContentHash: input.schemaResult.artifact.contentHash,
       unresolved: false
     },
     fullContract: input.includeFullContract ? contracts : undefined,
     complete: true,
     rawReadNeededForNextStep: false,
     budgets: {
-      truncated: artifact.budgets.truncated || schemaResult.budgets.truncated,
-      exhausted: [...new Set([...artifact.budgets.exhausted, ...schemaResult.budgets.exhausted])]
+      truncated: input.artifact.budgets.truncated || input.schemaResult.budgets.truncated,
+      exhausted: [...new Set([...input.artifact.budgets.exhausted, ...input.schemaResult.budgets.exhausted])]
     }
   };
+}
+
+export function getSchemaContract(input: GetSchemaContractInput): GetSchemaContractResult {
+  const artifact = resolveArtifact({ ...input, includeRawContent: true });
+  const envelope = artifact.source.rawContent ? parseContinuityEnvelope(artifact.source.rawContent) : undefined;
+  const schemaReference = resolveSchemaReference({ source: artifact.source, envelope });
+  const schemaResult = schemaReference
+    ? resolveArtifact({ reference: schemaReference, maxArtifactBytes: input.maxArtifactBytes, includeRawContent: true, sourceAccess: input.sourceAccess })
+    : undefined;
+
+  if (!schemaResult?.source.rawContent) {
+    return createUnresolvedResult({ artifact, envelope, schemaReference, schemaResult });
+  }
+  return createResolvedResult({ artifact, schemaResult, includeFullContract: input.includeFullContract });
+}
+
+export async function getSchemaContractAsync(input: GetSchemaContractInput): Promise<GetSchemaContractResult> {
+  const artifact = await resolveArtifactAsync({ ...input, includeRawContent: true });
+  const envelope = artifact.source.rawContent ? parseContinuityEnvelope(artifact.source.rawContent) : undefined;
+  const schemaReference = resolveSchemaReference({ source: artifact.source, envelope });
+  const schemaResult = schemaReference
+    ? await resolveArtifactAsync({ reference: schemaReference, maxArtifactBytes: input.maxArtifactBytes, includeRawContent: true, sourceAccess: input.sourceAccess })
+    : undefined;
+
+  if (!schemaResult?.source.rawContent) {
+    return createUnresolvedResult({ artifact, envelope, schemaReference, schemaResult });
+  }
+
+  return createResolvedResult({ artifact, schemaResult, includeFullContract: input.includeFullContract });
 }

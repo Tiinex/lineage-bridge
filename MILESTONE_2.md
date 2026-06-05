@@ -47,6 +47,12 @@ Current progress:
 
 * [x] M2 Leaf 1 completed: source strategy metadata, remote fetch abstraction shape, workspace root config shape, timeout/retry/budget input shapes, and output compatibility are now represented in shared core and current source outputs without starting real remote fetch behavior.
 * [x] M2 Leaf 1.1 completed: async source-boundary is now locked through a separate `resolveArtifactAsync` entrypoint, `sourceAccess` now propagates through structure/tree/details/children surfaces, and current source output explicitly reports that workspace policy is not yet enforced.
+* [x] M2 Leaf 2 completed: `resolveArtifactAsync` now performs minimal real remote GitHub fetch for commit-pinned blob/raw URLs, preserves metadata-first default plus raw opt-in and truncation rules, collapses equivalent blob/raw commit refs to the same immutable identity, and maps remote failures to structured source status through fake-fetcher coverage.
+* [x] M2 Leaf 3 completed: GitHub references now normalize onto a canonical blob-form reference, commit refs remain immutable with immutable-origin cache identity, and non-commit GitHub refs are reported as mutable branch refs with content-scoped cache identity in both local-mirror and remote source paths.
+* [x] M2 Leaf 4 completed: async schema contract and validator surfaces now resolve schema targets against local or GitHub artifact context, preserve commit-pinned remote schema resolution through the async source path, and return truthful incomplete validation when the governing schema cannot actually be fetched.
+* [x] M2 Leaf 4.1 completed: async schema contract and validator surfaces now explicitly surface artifact-pinned versus schema-mutable risk, so a commit-pinned artifact that resolves its governing schema through a mutable branch reference stays visibly degraded instead of reading as fully stable.
+* [x] M2 Leaf 5 completed: direct local artifact reads now enforce configured workspace roots, local reads outside allowed roots can be blocked or explicitly allowed, and lineage plus action surfaces now carry the same workspace policy through parent traversal so path traversal outside the root is no longer silently followed.
+* [x] M2 Leaf 5.1 completed: local sandbox symlink policy now has executable host-side coverage, including strict link blocking and within-workspace blocking when a linked path resolves outside the allowed root.
 
 ---
 
@@ -480,37 +486,37 @@ DoD:
 
 ### Phase 2 — Remote GitHub Fetch
 
-* [ ] Implement GitHub URL parsing for blob/raw URLs.
-* [ ] Implement remote raw fetch.
-* [ ] Map GitHub fetch errors to structured statuses.
-* [ ] Preserve metadata-first default output.
-* [ ] Preserve raw opt-in behavior.
-* [ ] Preserve truncation rules.
+* [x] Implement GitHub URL parsing for blob/raw URLs.
+* [x] Implement remote raw fetch.
+* [x] Map GitHub fetch errors to structured statuses.
+* [x] Preserve metadata-first default output.
+* [x] Preserve raw opt-in behavior.
+* [x] Preserve truncation rules.
 
 ### Phase 3 — GitHub Identity And Mutability
 
-* [ ] Normalize GitHub references.
-* [ ] Compute immutable source identity for commit refs.
-* [ ] Mark branch refs as mutable.
-* [ ] Preserve alias collapse for equivalent blob/raw commit refs.
-* [ ] Preserve alias conflict for divergent refs.
-* [ ] Update cache identity behavior for remote source.
+* [x] Normalize GitHub references.
+* [x] Compute immutable source identity for commit refs.
+* [x] Mark branch refs as mutable.
+* [x] Preserve alias collapse for equivalent blob/raw commit refs.
+* [x] Preserve alias conflict for divergent refs.
+* [x] Update cache identity behavior for remote source.
 
 ### Phase 4 — Remote Schema Resolution
 
-* [ ] Resolve relative schema links from GitHub artifact context.
-* [ ] Preserve commit-pinned schema resolution when artifact is commit-pinned.
-* [ ] Surface artifact-pinned/schema-mutable risk.
-* [ ] Preserve incomplete validation when schema fetch fails.
-* [ ] Preserve readable artifact envelope when schema fetch fails and artifact raw source is complete.
+* [x] Resolve relative schema links from GitHub artifact context.
+* [x] Preserve commit-pinned schema resolution when artifact is commit-pinned.
+* [x] Surface artifact-pinned/schema-mutable risk.
+* [x] Preserve incomplete validation when schema fetch fails.
+* [x] Preserve readable artifact envelope when schema fetch fails and artifact raw source is complete.
 
 ### Phase 5 — Local Sandbox
 
-* [ ] Add workspace root allowlist.
-* [ ] Block local paths outside allowed roots.
-* [ ] Block parent/origin traversal outside allowed roots.
-* [ ] Add symlink policy.
-* [ ] Add path traversal tests.
+* [x] Add workspace root allowlist.
+* [x] Block local paths outside allowed roots.
+* [x] Block parent/origin traversal outside allowed roots.
+* [x] Add symlink policy.
+* [x] Add path traversal tests.
 
 ### Phase 6 — Agent Access Guardrails
 

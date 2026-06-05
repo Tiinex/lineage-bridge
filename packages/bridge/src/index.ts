@@ -13,12 +13,12 @@ import { getNodeChildren } from "./getNodeChildren";
 
 export { resolveArtifact, resolveArtifactAsync } from "@tiinex/lineage-bridge-sources";
 export { parseContinuityEnvelope } from "@tiinex/lineage-bridge-parsers";
-export { validateArtifact } from "@tiinex/lineage-bridge-validators";
+export { validateArtifact, validateArtifactAsync } from "@tiinex/lineage-bridge-validators";
 export { readEnvelope } from "./readEnvelope";
 export { getLineage } from "./getLineage";
 export { getHandoffPacket } from "./getHandoffPacket";
 export { getRelevantSlice } from "./getRelevantSlice";
-export { getSchemaContract } from "./getSchemaContract";
+export { getSchemaContract, getSchemaContractAsync } from "./getSchemaContract";
 export { getValidationOverlay } from "./getValidationOverlay";
 export { getAvailableActions } from "./getAvailableActions";
 export { getStructureIndex } from "./getStructureIndex";

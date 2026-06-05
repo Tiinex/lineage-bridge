@@ -75,7 +75,7 @@ export function getLineage(input: GetLineageInput): GetLineageResult {
   let currentReference = input.reference;
   let depth = 0;
   let fetches = 0;
-  let lastArtifact = resolveArtifact({ reference: input.reference, maxArtifactBytes }).artifact;
+  let lastArtifact = resolveArtifact({ reference: input.reference, maxArtifactBytes, sourceAccess: input.sourceAccess }).artifact;
   let stoppedBecause: GetLineageResult["stoppedBecause"] = "complete";
   let originRecoveryCandidates: string[] = [];
   let rawReadNeededForNextStep = false;
@@ -87,7 +87,7 @@ export function getLineage(input: GetLineageInput): GetLineageResult {
       exhausted.push("maxFetches");
       break;
     }
-    const resolved = resolveArtifact({ reference: currentReference, maxArtifactBytes, includeRawContent: true });
+    const resolved = resolveArtifact({ reference: currentReference, maxArtifactBytes, includeRawContent: true, sourceAccess: input.sourceAccess });
     fetches += 1;
     lastArtifact = resolved.artifact;
 

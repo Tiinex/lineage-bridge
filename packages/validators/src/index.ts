@@ -1,5 +1,8 @@
+import path from "node:path";
 import {
   type ContinuityEnvelope,
+  type ResolveArtifactResult,
+  type ResolvedArtifactSource,
   type ValidateArtifactInput,
   type ValidateArtifactResult,
   type ValidationFinding,
@@ -8,7 +11,9 @@ import {
   stripRawContentFromSource
 } from "@tiinex/lineage-bridge-core";
 import { parseContinuityEnvelope } from "@tiinex/lineage-bridge-parsers";
-import { resolveArtifact } from "@tiinex/lineage-bridge-sources";
+import { resolveArtifact, resolveArtifactAsync } from "@tiinex/lineage-bridge-sources";
+
+const GITHUB_BLOB_SOURCE_RE = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/iu;
 
 type SupportedSchemaId = "tiinex.root.v1" | "tiinex.topic.v1" | "tiinex.task.v1";
 
@@ -255,13 +260,64 @@ function asSupportedSchemaId(schemaId: string | undefined): SupportedSchemaId | 
   return undefined;
 }
 
-export function validateArtifact(input: ValidateArtifactInput): ValidateArtifactResult {
-  const resolved = resolveArtifact({ ...input, includeRawContent: true });
+function resolveSchemaReference(input: { source: ResolvedArtifactSource; envelope?: ContinuityEnvelope }): string | undefined {
+  const target = input.envelope?.currentSchema?.target?.trim();
+  if (!target) {
+    return undefined;
+  }
+  if (/^https?:\/\//iu.test(target)) {
+    return target;
+  }
+  if (input.source.originKind === "local-file" && input.source.normalizedReference) {
+    return path.resolve(path.dirname(input.source.normalizedReference), ...target.split("/"));
+  }
+  const githubMatch = input.source.normalizedReference?.match(GITHUB_BLOB_SOURCE_RE);
+  if ((input.source.originKind === "github-blob" || input.source.originKind === "github-raw") && githubMatch && input.source.path && input.source.ref) {
+    const owner = githubMatch[1];
+    const repo = githubMatch[2];
+    const artifactDir = path.posix.dirname(input.source.path);
+    const resolvedPath = path.posix.normalize(path.posix.join(artifactDir, target));
+    return `https://github.com/${owner}/${repo}/blob/${input.source.ref}/${resolvedPath}`;
+  }
+  return target;
+}
+
+function createSchemaResolutionFinding(schemaReference: string | undefined): ValidationFinding {
+  return createFinding({
+    code: "governing-schema-unresolved",
+    severity: "warning",
+    message: "Governing schema could not be resolved from the artifact context, so validation remains incomplete even though artifact raw source was readable.",
+    targetSurface: "schema",
+    sourceAnchor: schemaReference,
+    ruleSource: "Milestone 2 / Remote Schema Resolution"
+  });
+}
+
+function createSchemaMutabilityRiskFinding(schemaReference: string | undefined): ValidationFinding {
+  return createFinding({
+    code: "artifact-pinned-schema-mutable",
+    severity: "warning",
+    message: "Artifact is commit-pinned, but the governing schema resolved through a mutable reference, so schema guidance may drift independently of the artifact.",
+    targetSurface: "schema",
+    sourceAnchor: schemaReference,
+    ruleSource: "Milestone 2 / Schema Mutability Risk"
+  });
+}
+
+function hasSchemaMutabilityRisk(input: {
+  resolved: ResolveArtifactResult;
+  schemaResult?: ResolveArtifactResult;
+}): boolean {
+  return input.resolved.source.immutable === true && input.schemaResult?.source.versioned === true && input.schemaResult.source.immutable === false;
+}
+
+function buildValidationResult(input: ValidateArtifactInput, resolved: ResolveArtifactResult, schemaResult?: ResolveArtifactResult): ValidateArtifactResult {
   const source = stripRawContentFromSource(resolved.source);
   const compatibilityNotes = [
     ...(resolved.compatibilityNotes ?? []),
     "initial validator coverage: continuity envelope plus minimal body-shape rules only"
   ];
+
   if (resolved.budgets.truncated) {
     return {
       ...createOutputMetadata("validateArtifact"),
@@ -334,7 +390,12 @@ export function validateArtifact(input: ValidateArtifactInput): ValidateArtifact
   }
 
   const envelope = parseContinuityEnvelope(resolved.source.rawContent);
+  const governingSchemaReference = resolveSchemaReference({ source: resolved.source, envelope });
   const governingSchemaId = asSupportedSchemaId(getSchemaId(envelope.currentSchema));
+  const schemaResolutionComplete = Boolean(schemaResult?.source.rawContent && !schemaResult.budgets.truncated);
+  const governingSchemaContentHash = schemaResult?.artifact.contentHash;
+  const schemaMutabilityRisk = hasSchemaMutabilityRisk({ resolved, schemaResult });
+
   if (!governingSchemaId) {
     return {
       ...createOutputMetadata("validateArtifact"),
@@ -348,7 +409,7 @@ export function validateArtifact(input: ValidateArtifactInput): ValidateArtifact
         severity: "warning",
         message: "No shared validator is implemented yet for this governing schema.",
         targetSurface: "schema",
-        sourceAnchor: envelope.currentSchema?.target,
+        sourceAnchor: governingSchemaReference,
         ruleSource: "Milestone 1 / ValidateArtifact"
       })],
       validationBasis: createValidationBasis({
@@ -357,31 +418,45 @@ export function validateArtifact(input: ValidateArtifactInput): ValidateArtifact
         artifactContentHash: resolved.artifact.contentHash,
         artifactRawSourceStatus: resolved.source.rawContentAvailability,
         governingSchemaId: getSchemaId(envelope.currentSchema),
-        governingSchemaReference: envelope.currentSchema?.target,
-        governingSchemaContentHash: undefined,
+        governingSchemaReference,
+        governingSchemaContentHash,
         validatorId: undefined,
         validatorVersion: undefined,
         validationPolicyVersion: "0.1.0",
-        schemaResolutionComplete: Boolean(envelope.currentSchema),
+        schemaResolutionComplete,
         usedRawSource: true,
         exactValidationBlocked: false,
         partialValidation: true
       }),
       complete: false,
       rawReadNeededForNextStep: false,
-      budgets: resolved.budgets
+      budgets: {
+        truncated: resolved.budgets.truncated || (schemaResult?.budgets.truncated ?? false),
+        exhausted: [...new Set([...resolved.budgets.exhausted, ...(schemaResult?.budgets.exhausted ?? [])])]
+      }
     };
   }
 
   const spec = VALIDATORS[governingSchemaId];
   const findings = [
     ...validateSchemaShape(envelope, spec),
-    ...validateSchemaBody(resolved.source.rawContent, governingSchemaId, spec)
+    ...validateSchemaBody(resolved.source.rawContent, governingSchemaId, spec),
+    ...(!schemaResolutionComplete ? [createSchemaResolutionFinding(governingSchemaReference)] : []),
+    ...(schemaMutabilityRisk ? [createSchemaMutabilityRiskFinding(governingSchemaReference)] : [])
   ];
   return {
     ...createOutputMetadata("validateArtifact"),
-    compatibilityNotes,
-    status: findings.some((finding) => finding.severity === "error") ? "invalid" : "ok",
+    compatibilityNotes: schemaMutabilityRisk
+      ? [
+          ...compatibilityNotes,
+          "Artifact is commit-pinned but the governing schema resolved through a mutable reference, so exact schema guidance may drift independently of the artifact."
+        ]
+      : compatibilityNotes,
+    status: !schemaResolutionComplete || schemaMutabilityRisk
+      ? "incomplete"
+      : findings.some((finding) => finding.severity === "error")
+        ? "invalid"
+        : "ok",
     source,
     artifact: resolved.artifact,
     governingSchemaId,
@@ -392,18 +467,43 @@ export function validateArtifact(input: ValidateArtifactInput): ValidateArtifact
       artifactContentHash: resolved.artifact.contentHash,
       artifactRawSourceStatus: resolved.source.rawContentAvailability,
       governingSchemaId,
-      governingSchemaReference: envelope.currentSchema?.target,
-      governingSchemaContentHash: undefined,
+      governingSchemaReference,
+      governingSchemaContentHash,
       validatorId: spec.validatorId,
       validatorVersion: spec.validatorVersion,
       validationPolicyVersion: "0.1.0",
-      schemaResolutionComplete: Boolean(envelope.currentSchema),
+      schemaResolutionComplete,
       usedRawSource: true,
       exactValidationBlocked: false,
       partialValidation: true
     }),
-    complete: findings.length === 0,
+    complete: schemaResolutionComplete && !schemaMutabilityRisk && findings.length === 0,
     rawReadNeededForNextStep: false,
-    budgets: resolved.budgets
+    budgets: {
+      truncated: resolved.budgets.truncated || (schemaResult?.budgets.truncated ?? false),
+      exhausted: [...new Set([...resolved.budgets.exhausted, ...(schemaResult?.budgets.exhausted ?? [])])]
+    }
   };
+}
+
+export function validateArtifact(input: ValidateArtifactInput): ValidateArtifactResult {
+  const resolved = resolveArtifact({ ...input, includeRawContent: true });
+  const schemaReference = resolved.source.rawContent
+    ? resolveSchemaReference({ source: resolved.source, envelope: parseContinuityEnvelope(resolved.source.rawContent) })
+    : undefined;
+  const schemaResult = schemaReference
+    ? resolveArtifact({ reference: schemaReference, maxArtifactBytes: input.maxArtifactBytes, includeRawContent: true, sourceAccess: input.sourceAccess })
+    : undefined;
+  return buildValidationResult(input, resolved, schemaResult);
+}
+
+export async function validateArtifactAsync(input: ValidateArtifactInput): Promise<ValidateArtifactResult> {
+  const resolved = await resolveArtifactAsync({ ...input, includeRawContent: true });
+  const schemaReference = resolved.source.rawContent
+    ? resolveSchemaReference({ source: resolved.source, envelope: parseContinuityEnvelope(resolved.source.rawContent) })
+    : undefined;
+  const schemaResult = schemaReference
+    ? await resolveArtifactAsync({ reference: schemaReference, maxArtifactBytes: input.maxArtifactBytes, includeRawContent: true, sourceAccess: input.sourceAccess })
+    : undefined;
+  return buildValidationResult(input, resolved, schemaResult);
 }

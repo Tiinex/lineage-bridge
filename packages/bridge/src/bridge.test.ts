@@ -1,9 +1,45 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import { getAvailableActions, getHandoffPacket, getLineage, getNodeChildren, getNodeDetails, getRelevantSlice, getSchemaContract, getStructureIndex, getTreeProjection, getValidationOverlay, parseContinuityEnvelope, readEnvelope, resolveArtifact, resolveArtifactAsync, validateArtifact } from "./index";
+import { type RemoteFetchRequest } from "@tiinex/lineage-bridge-core";
+import { getAvailableActions, getHandoffPacket, getLineage, getNodeChildren, getNodeDetails, getRelevantSlice, getSchemaContract, getSchemaContractAsync, getStructureIndex, getTreeProjection, getValidationOverlay, parseContinuityEnvelope, readEnvelope, resolveArtifact, resolveArtifactAsync, validateArtifact, validateArtifactAsync } from "./index";
 import { parseContractSection } from "@tiinex/lineage-bridge-parsers";
 import { classifyAliasFamilies, getAliasFamilyKey } from "./aliasFamilies";
+
+function withWorkspaceLinkFixture(input: {
+  targetInsideRoot: boolean;
+  callback: (fixture: { workspaceRoot: string; linkedFile: string }) => void;
+}): void {
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), "lineage-bridge-sandbox-"));
+  const workspaceRoot = path.join(tempRoot, "workspace-root");
+  const insideTargetDir = path.join(workspaceRoot, "inside-target");
+  const outsideTargetDir = path.join(tempRoot, "outside-target");
+  const linkDir = path.join(workspaceRoot, "linked-dir");
+  const chosenTargetDir = input.targetInsideRoot ? insideTargetDir : outsideTargetDir;
+
+  mkdirSync(workspaceRoot, { recursive: true });
+  mkdirSync(insideTargetDir, { recursive: true });
+  mkdirSync(outsideTargetDir, { recursive: true });
+  writeFileSync(path.join(chosenTargetDir, "linked.trace.md"), `# Continuity Context\n\n- Envelope Schema: [tiinex.root.v1](schema)\n- Current\n  - Current Schema: [tiinex.topic.v1](topic)\n  - Created At: 2026-06-06 00:00:00\n\n---\n\n# Linked Fixture\n\n## Current Read\n\nRuntime link fixture.\n\n---\n\n# Continuity Integrity\n\n- sha256-base64url-c14n-v1\n  - Towards: [self](self)\n  - Value: linked-fixture\n`);
+
+  try {
+    symlinkSync(chosenTargetDir, linkDir, "junction");
+  } catch {
+    rmSync(tempRoot, { recursive: true, force: true });
+    return;
+  }
+
+  try {
+    input.callback({
+      workspaceRoot,
+      linkedFile: path.join(linkDir, "linked.trace.md")
+    });
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
 
 test("resolveArtifact reads a local Tiinex artifact", () => {
   const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "kickstarter", "001.trace.md");
@@ -60,11 +96,100 @@ test("resolveArtifact accepts the M2 source contract upgrade inputs without chan
   });
   assert.equal(result.status, "ok");
   assert.equal(result.source.sourceStrategy, "local-workspace");
-  assert.equal(result.source.workspacePolicyEnforced, false);
-  assert.ok(result.compatibilityNotes?.includes("Workspace access policy shape is accepted but is not enforced until the local sandbox phase."));
+  assert.equal(result.source.workspacePolicyEnforced, true);
+  assert.ok(result.compatibilityNotes?.includes("Workspace access policy is enforced for direct local artifact reads; broader local traversal hardening remains part of the sandbox phase."));
   assert.ok(result.compatibilityNotes?.includes("Remote GitHub fetch contract is declared but current resolution still uses the existing local mirror path."));
   assert.ok(result.compatibilityNotes?.includes("Remote network budget shapes are accepted for future source strategies but are not enforced by the current local scaffold."));
   assert.ok(result.compatibilityNotes?.includes("Fresh origin resolution preference is declared but is not enforced before remote fetch and cache phases are implemented."));
+});
+
+test("resolveArtifact blocks local reads outside configured workspace roots", () => {
+  const reference = path.resolve(__dirname, "..", "src", "fixtures", "unknown-schema.trace.md");
+  const result = resolveArtifact({
+    reference,
+    sourceAccess: {
+      workspace: {
+        roots: [path.resolve(__dirname, "..", "..", "..", "..", "docs")],
+        symlinkPolicy: "within-workspace"
+      }
+    }
+  });
+
+  assert.equal(result.status, "blocked");
+  assert.equal(result.source.workspacePolicyEnforced, true);
+  assert.equal(result.source.accessStatus, "unauthorized");
+  assert.equal(result.source.rawContentAvailability, "unavailable");
+  assert.ok(result.source.warnings.includes("workspace-root-blocked"));
+});
+
+test("resolveArtifact can allow local reads outside configured roots when explicitly permitted", () => {
+  const reference = path.resolve(__dirname, "..", "src", "fixtures", "unknown-schema.trace.md");
+  const result = resolveArtifact({
+    reference,
+    sourceAccess: {
+      workspace: {
+        roots: [path.resolve(__dirname, "..", "..", "..", "..", "docs")],
+        allowOutsideRoots: true,
+        symlinkPolicy: "within-workspace"
+      }
+    }
+  });
+
+  assert.equal(result.status, "ok");
+  assert.equal(result.source.workspacePolicyEnforced, true);
+  assert.equal(result.source.accessStatus, "readable");
+});
+
+test("resolveArtifact blocks linked local paths when symlink policy is error", (t) => {
+  let executed = false;
+  withWorkspaceLinkFixture({
+    targetInsideRoot: true,
+    callback: ({ workspaceRoot, linkedFile }) => {
+      executed = true;
+      const result = resolveArtifact({
+        reference: linkedFile,
+        sourceAccess: {
+          workspace: {
+            roots: [workspaceRoot],
+            symlinkPolicy: "error"
+          }
+        }
+      });
+
+      assert.equal(result.status, "blocked");
+      assert.equal(result.source.accessStatus, "unauthorized");
+      assert.ok(result.source.warnings.includes("workspace-symlink-blocked"));
+    }
+  });
+  if (!executed) {
+    t.skip("Link creation is not available on this host.");
+  }
+});
+
+test("resolveArtifact blocks linked local paths that escape workspace roots under within-workspace policy", (t) => {
+  let executed = false;
+  withWorkspaceLinkFixture({
+    targetInsideRoot: false,
+    callback: ({ workspaceRoot, linkedFile }) => {
+      executed = true;
+      const result = resolveArtifact({
+        reference: linkedFile,
+        sourceAccess: {
+          workspace: {
+            roots: [workspaceRoot],
+            symlinkPolicy: "within-workspace"
+          }
+        }
+      });
+
+      assert.equal(result.status, "blocked");
+      assert.equal(result.source.accessStatus, "unauthorized");
+      assert.ok(result.source.warnings.includes("workspace-symlink-outside-root-blocked"));
+    }
+  });
+  if (!executed) {
+    t.skip("Link creation is not available on this host.");
+  }
 });
 
 test("resolveArtifact collapses equivalent GitHub blob and raw references onto the same canonical artifact id", () => {
@@ -101,19 +226,156 @@ test("resolveArtifact marks unsupported references as not cache-safe", () => {
   });
 });
 
-test("resolveArtifactAsync preserves the current sync contract while locking the async boundary for later remote fetch", async () => {
-  const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "kickstarter", "001.trace.md");
+test("resolveArtifactAsync remotely resolves commit-pinned GitHub blob and raw references through an injected fetcher", async () => {
+  const revision = "291c00f4aaba1e1ba5a0c3479c078070a83c060e";
+  const relativePath = ".topics/educational/memes/work/remote/001.trace.md";
+  const blobReference = `https://github.com/Tiinex/docs/blob/${revision}/${relativePath}`;
+  const rawReference = `https://raw.githubusercontent.com/Tiinex/docs/${revision}/${relativePath}`;
+  const rawBody = `# Continuity Context\n- Current\n  - Current Schema: [tiinex.topic.v1](topic)\n`;
+  const requests: string[] = [];
+  const remoteFetcher = async (request: { url: string; timeoutMs?: number }) => {
+    requests.push(`${request.url}#${request.timeoutMs ?? 0}`);
+    return {
+      ok: true,
+      status: 200,
+      bodyText: rawBody,
+      finalUrl: request.url,
+      headers: { "content-type": "text/markdown; charset=utf-8" }
+    };
+  };
+
+  const blobResult = await resolveArtifactAsync({
+    reference: blobReference,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      network: { requestTimeoutMs: 1200 },
+      remoteFetcher
+    }
+  });
+  const rawResult = await resolveArtifactAsync({
+    reference: rawReference,
+    includeRawContent: true,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      network: { requestTimeoutMs: 1200 },
+      remoteFetcher
+    }
+  });
+
+  assert.deepEqual(requests, [
+    `https://raw.githubusercontent.com/Tiinex/docs/${revision}/${relativePath}#1200`,
+    `https://raw.githubusercontent.com/Tiinex/docs/${revision}/${relativePath}#1200`
+  ]);
+  assert.equal(blobResult.status, "ok");
+  assert.equal(rawResult.status, "ok");
+  assert.equal(blobResult.source.sourceStrategy, "github-remote");
+  assert.equal(blobResult.source.trustLevel, "remote-public");
+  assert.equal(blobResult.source.refKind, "commit");
+  assert.equal(blobResult.source.immutable, true);
+  assert.equal(blobResult.source.workspacePolicyEnforced, false);
+  assert.equal(blobResult.source.rawContent, undefined);
+  assert.equal(blobResult.rawReadNeededForNextStep, true);
+  assert.equal(rawResult.source.rawContent, rawBody);
+  assert.equal(rawResult.rawReadNeededForNextStep, false);
+  assert.equal(blobResult.artifact.canonicalArtifactId, rawResult.artifact.canonicalArtifactId);
+  assert.equal(blobResult.artifact.cacheIdentity.cacheable, true);
+  assert.equal(blobResult.artifact.cacheIdentity.cacheScope, "immutable-origin");
+  assert.ok(blobResult.compatibilityNotes?.includes("Raw source is omitted by default; request includeRawContent to access bounded raw content."));
+  assert.equal(blobResult.compatibilityNotes?.includes("Remote GitHub fetch contract is declared but current resolution still uses the existing local mirror path."), false);
+});
+
+test("resolveArtifactAsync maps remote GitHub fetch failure to structured source status", async () => {
+  const reference = "https://github.com/Tiinex/docs/blob/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001.trace.md";
   const result = await resolveArtifactAsync({
     reference,
     sourceAccess: {
       preferredGitHubStrategy: "remote",
-      freshOriginResolution: true,
-      network: { requestTimeoutMs: 1000 }
+      remoteFetcher: async () => ({ ok: false, status: 404, errorCode: "not-found" })
     }
   });
+
+  assert.equal(result.status, "unavailable");
+  assert.equal(result.source.sourceStrategy, "github-remote");
+  assert.equal(result.source.trustLevel, "remote-public");
+  assert.equal(result.source.refKind, "commit");
+  assert.equal(result.source.immutable, true);
+  assert.equal(result.source.accessStatus, "not-found");
+  assert.equal(result.source.rawContentAvailability, "rendered-only");
+  assert.equal(result.source.renderedContentAvailability, true);
+  assert.ok(result.source.warnings.includes("github-remote-not-found"));
+});
+
+test("resolveArtifactAsync preserves maxArtifactBytes truncation rules for remote GitHub content", async () => {
+  const reference = "https://raw.githubusercontent.com/Tiinex/docs/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001.trace.md";
+  const rawBody = "0123456789abcdefghijklmnopqrstuvwxyz";
+  const result = await resolveArtifactAsync({
+    reference,
+    includeRawContent: true,
+    maxArtifactBytes: 8,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      remoteFetcher: async () => ({ ok: true, status: 200, bodyText: rawBody })
+    }
+  });
+
   assert.equal(result.status, "ok");
-  assert.equal(result.source.sourceStrategy, "local-workspace");
-  assert.ok(result.compatibilityNotes?.includes("Remote GitHub fetch contract is declared but current resolution still uses the existing local mirror path."));
+  assert.equal(result.complete, false);
+  assert.equal(result.budgets.truncated, true);
+  assert.deepEqual(result.budgets.exhausted, ["maxArtifactBytes"]);
+  assert.equal(result.source.rawContent, rawBody.slice(0, 8));
+  assert.ok(result.source.warnings.includes("artifact-bytes-truncated"));
+});
+
+test("resolveArtifactAsync marks branch GitHub refs as mutable and content-cache scoped", async () => {
+  const branchName = "main";
+  const relativePath = ".topics/educational/memes/work/remote/001.trace.md";
+  const blobReference = `https://github.com/Tiinex/docs/blob/${branchName}/${relativePath}`;
+  const rawReference = `https://raw.githubusercontent.com/Tiinex/docs/${branchName}/${relativePath}`;
+  const rawBody = "branch-content";
+  const remoteFetcher = async () => ({ ok: true, status: 200, bodyText: rawBody });
+
+  const blobResult = await resolveArtifactAsync({
+    reference: blobReference,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      remoteFetcher
+    }
+  });
+  const rawResult = await resolveArtifactAsync({
+    reference: rawReference,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      remoteFetcher
+    }
+  });
+
+  assert.equal(blobResult.status, "ok");
+  assert.equal(rawResult.status, "ok");
+  assert.equal(blobResult.source.refKind, "branch");
+  assert.equal(blobResult.source.immutable, false);
+  assert.equal(blobResult.source.mutability, "mutable");
+  assert.equal(blobResult.source.normalizedReference, blobReference);
+  assert.equal(rawResult.source.normalizedReference, blobReference);
+  assert.equal(blobResult.artifact.immutableSourceIdentity, undefined);
+  assert.equal(rawResult.artifact.immutableSourceIdentity, undefined);
+  assert.equal(blobResult.artifact.canonicalArtifactId, rawResult.artifact.canonicalArtifactId);
+  assert.equal(blobResult.artifact.cacheIdentity.cacheable, true);
+  assert.equal(blobResult.artifact.cacheIdentity.cacheScope, "content");
+  assert.equal(blobResult.artifact.cacheIdentity.reason, "Only content-scoped caching is safe because the source identity is mutable or provisional.");
+  assert.deepEqual(blobResult.artifact.identityInputsUsed, ["normalizedReference", "contentHash"]);
+});
+
+test("resolveArtifact marks local-mirror branch GitHub refs as mutable", () => {
+  const reference = "https://github.com/Tiinex/docs/blob/main/.topics/educational/001.trace.md";
+  const result = resolveArtifact({ reference });
+
+  assert.equal(result.status, "ok");
+  assert.equal(result.source.sourceStrategy, "github-local-mirror");
+  assert.equal(result.source.refKind, "branch");
+  assert.equal(result.source.immutable, false);
+  assert.equal(result.source.mutability, "mutable");
+  assert.equal(result.artifact.immutableSourceIdentity, undefined);
+  assert.equal(result.artifact.cacheIdentity.cacheScope, "content");
 });
 
 test("classifyAliasFamilies marks divergent node ids in one alias family as conflict", () => {
@@ -242,6 +504,27 @@ test("getLineage detects cycles in local lineage traversal", () => {
   assert.equal(result.nodes[1]?.summary, "Cycle B");
 });
 
+test("getLineage blocks parent traversal outside configured workspace roots", () => {
+  const sandboxRoot = path.resolve(__dirname, "..", "src", "fixtures", "sandbox");
+  const reference = path.resolve(sandboxRoot, "child-inside-root.trace.md");
+  const result = getLineage({
+    reference,
+    sourceAccess: {
+      workspace: {
+        roots: [sandboxRoot],
+        symlinkPolicy: "within-workspace"
+      }
+    }
+  });
+
+  assert.equal(result.status, "incomplete");
+  assert.equal(result.nodes.length, 1);
+  assert.equal(result.stoppedBecause, "unreadable-parent");
+  assert.equal(result.rawReadNeededForNextStep, true);
+  assert.equal(result.nodes[0]?.source.workspacePolicyEnforced, true);
+  assert.equal(result.originRecoveryCandidates.includes("../outside-root-parent.trace.md"), true);
+});
+
 test("getLineage does not parse lineage state from truncated raw source", () => {
   const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "001.trace.md");
   const result = getLineage({ reference, maxArtifactBytes: 128 });
@@ -326,6 +609,40 @@ test("getSchemaContract resolves the governing schema from a task artifact", () 
   assert.ok(result.fullContract?.schemaValidationContract);
 });
 
+test("getSchemaContractAsync resolves a relative schema target against commit-pinned GitHub artifact context", async () => {
+  const artifactReference = "https://github.com/Tiinex/docs/blob/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001.trace.md";
+  const schemaBody = `# Continuity Context\n- Envelope Schema: [tiinex.root.v1](tiinex.root.v1.schema.md)\n- Current\n  - Current Schema: [tiinex.task.v1](tiinex.task.v1.schema.md)\n  - Created At: 2026-06-06 00:00:00\n---\n# Task\n\n## Schema Validation Contract\n\n### Task Rules\nValidation Authority\n\n- Schema Validation Contract\n\nGeneration Authority\n\n- Artifact Creation Contract\n\nIntegrity Authority\n\n- Continuity Integrity\n\nKnown Category Labels\n\n- Rules\n`;
+  const artifactBody = `# Continuity Context\n- Envelope Schema: [tiinex.root.v1](../../../../.schemas/tiinex.root.v1.schema.md)\n- Current\n  - Current Schema: [tiinex.task.v1](../../../../.schemas/tiinex.task.v1.schema.md)\n  - Created At: 2026-06-06 00:00:00\n---\n# Remote Task\n\n## Objective\n\nRemote schema contract probe.\n\n## Done Criteria\n\nPhase 4 proof.\n\n## Scope\n\nBounded test artifact.\n`;
+  const requests: string[] = [];
+  const result = await getSchemaContractAsync({
+    reference: artifactReference,
+    includeFullContract: true,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      remoteFetcher: async ({ url }) => {
+        requests.push(url);
+        if (url.endsWith("/.topics/educational/memes/work/remote/001.trace.md")) {
+          return { ok: true, status: 200, bodyText: artifactBody };
+        }
+        if (url.endsWith("/.topics/.schemas/tiinex.task.v1.schema.md")) {
+          return { ok: true, status: 200, bodyText: schemaBody };
+        }
+        return { ok: false, status: 404, errorCode: "not-found" };
+      }
+    }
+  });
+
+  assert.equal(result.status, "ok");
+  assert.equal(result.contract.schemaId, "tiinex.task.v1");
+  assert.equal(result.contract.unresolved, false);
+  assert.ok(result.contract.schemaSourceReference?.includes("/.topics/.schemas/tiinex.task.v1.schema.md"));
+  assert.ok(result.fullContract?.schemaValidationContract);
+  assert.deepEqual(requests, [
+    "https://raw.githubusercontent.com/Tiinex/docs/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001.trace.md",
+    "https://raw.githubusercontent.com/Tiinex/docs/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/.schemas/tiinex.task.v1.schema.md"
+  ]);
+});
+
 test("parseContractSection detects duplicate group headings and named declarations", () => {
   const section = parseContractSection(`## Schema Validation Contract
 
@@ -376,6 +693,73 @@ test("getValidationOverlay returns a UI-neutral validation summary", () => {
   assert.ok(result.compatibilityNotes?.includes("initial validator coverage: continuity envelope plus minimal body-shape rules only"));
 });
 
+test("validateArtifactAsync stays incomplete when the governing schema cannot be fetched from remote context", async () => {
+  const reference = "https://github.com/Tiinex/docs/blob/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001.trace.md";
+  const artifactBody = `# Continuity Context\n- Envelope Schema: [tiinex.root.v1](../../../../.schemas/tiinex.root.v1.schema.md)\n- Current\n  - Current Schema: [tiinex.task.v1](../../../../.schemas/tiinex.task.v1.schema.md)\n  - Created At: 2026-06-06 00:00:00\n---\n# Remote Task\n\n## Objective\n\nRemote validation probe.\n\n## Done Criteria\n\nPhase 4 proof.\n\n## Scope\n\nBounded test artifact.\n`;
+
+  const result = await validateArtifactAsync({
+    reference,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      remoteFetcher: async ({ url }: RemoteFetchRequest) => url.endsWith("/001.trace.md")
+        ? { ok: true, status: 200, bodyText: artifactBody }
+        : { ok: false, status: 404, errorCode: "not-found" }
+    }
+  });
+
+  assert.equal(result.status, "incomplete");
+  assert.equal(result.governingSchemaId, "tiinex.task.v1");
+  assert.equal(result.validationBasis.schemaResolutionComplete, false);
+  assert.ok(result.validationBasis.governingSchemaReference?.includes("/.topics/.schemas/tiinex.task.v1.schema.md"));
+  assert.equal(result.validationBasis.governingSchemaContentHash, undefined);
+  assert.equal(result.validationBasis.usedRawSource, true);
+  assert.ok(result.findings.some((finding: { code: string }) => finding.code === "governing-schema-unresolved"));
+});
+
+test("getSchemaContractAsync surfaces artifact-pinned versus schema-mutable risk", async () => {
+  const reference = "https://github.com/Tiinex/docs/blob/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001.trace.md";
+  const artifactBody = `# Continuity Context\n- Envelope Schema: [tiinex.root.v1](../../../../.schemas/tiinex.root.v1.schema.md)\n- Current\n  - Current Schema: [tiinex.task.v1](https://github.com/Tiinex/docs/blob/main/.topics/.schemas/tiinex.task.v1.schema.md)\n  - Created At: 2026-06-06 00:00:00\n---\n# Remote Task\n\n## Objective\n\nSchema mutability probe.\n\n## Done Criteria\n\nSurface schema drift risk.\n\n## Scope\n\nBounded test artifact.\n`;
+  const schemaBody = `# Continuity Context\n- Envelope Schema: [tiinex.root.v1](tiinex.root.v1.schema.md)\n- Current\n  - Current Schema: [tiinex.task.v1](tiinex.task.v1.schema.md)\n  - Created At: 2026-06-06 00:00:00\n---\n# Task\n\n## Schema Validation Contract\n\n### Task Rules\nValidation Authority\n\n- Schema Validation Contract\n\nGeneration Authority\n\n- Artifact Creation Contract\n\nIntegrity Authority\n\n- Continuity Integrity\n\nKnown Category Labels\n\n- Rules\n`;
+
+  const result = await getSchemaContractAsync({
+    reference,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      remoteFetcher: async ({ url }: RemoteFetchRequest) => url.endsWith("/001.trace.md")
+        ? { ok: true, status: 200, bodyText: artifactBody }
+        : url.endsWith("/.topics/.schemas/tiinex.task.v1.schema.md")
+          ? { ok: true, status: 200, bodyText: schemaBody }
+          : { ok: false, status: 404, errorCode: "not-found" }
+    }
+  });
+
+  assert.equal(result.status, "ok");
+  assert.ok(result.compatibilityNotes?.includes("Artifact is commit-pinned but the governing schema resolved through a mutable branch reference, so schema guidance may drift independently of the artifact."));
+});
+
+test("validateArtifactAsync stays incomplete when a commit-pinned artifact resolves a mutable schema reference", async () => {
+  const reference = "https://github.com/Tiinex/docs/blob/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001.trace.md";
+  const artifactBody = `# Continuity Context\n- Envelope Schema: [tiinex.root.v1](../../../../.schemas/tiinex.root.v1.schema.md)\n- Current\n  - Current Schema: [tiinex.task.v1](https://github.com/Tiinex/docs/blob/main/.topics/.schemas/tiinex.task.v1.schema.md)\n  - Created At: 2026-06-06 00:00:00\n---\n# Remote Task\n\n## Objective\n\nSchema mutability validation probe.\n\n## Done Criteria\n\nSurface schema drift risk.\n\n## Scope\n\nBounded test artifact.\n`;
+  const schemaBody = `# Continuity Context\n- Envelope Schema: [tiinex.root.v1](tiinex.root.v1.schema.md)\n- Current\n  - Current Schema: [tiinex.task.v1](tiinex.task.v1.schema.md)\n  - Created At: 2026-06-06 00:00:00\n---\n# Task\n\n## Schema Validation Contract\n\n### Task Rules\nValidation Authority\n\n- Schema Validation Contract\n\nGeneration Authority\n\n- Artifact Creation Contract\n\nIntegrity Authority\n\n- Continuity Integrity\n\nKnown Category Labels\n\n- Rules\n`;
+
+  const result = await validateArtifactAsync({
+    reference,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      remoteFetcher: async ({ url }: RemoteFetchRequest) => url.endsWith("/001.trace.md")
+        ? { ok: true, status: 200, bodyText: artifactBody }
+        : url.endsWith("/.topics/.schemas/tiinex.task.v1.schema.md")
+          ? { ok: true, status: 200, bodyText: schemaBody }
+          : { ok: false, status: 404, errorCode: "not-found" }
+    }
+  });
+
+  assert.equal(result.status, "incomplete");
+  assert.equal(result.validationBasis.schemaResolutionComplete, true);
+  assert.ok(result.compatibilityNotes?.includes("Artifact is commit-pinned but the governing schema resolved through a mutable reference, so exact schema guidance may drift independently of the artifact."));
+  assert.ok(result.findings.some((finding: { code: string }) => finding.code === "artifact-pinned-schema-mutable"));
+});
+
 test("getStructureIndex and tree projection preserve unknown validation status separately from incomplete", () => {
   const reference = path.resolve(__dirname, "..", "src", "fixtures", "unknown-schema.trace.md");
   const index = getStructureIndex({ references: [reference] });
@@ -406,6 +790,26 @@ test("getAvailableActions degrades status when artifact access is blocked", () =
   assert.equal(result.complete, false);
   assert.equal(result.actions.some((entry) => entry.actionId === "copy-handoff" && entry.enabled), false);
   assert.equal(result.actions.some((entry) => entry.actionId === "copy-relevant-slice" && entry.enabled), false);
+});
+
+test("getAvailableActions respects workspace sandbox policy for local reads", () => {
+  const reference = path.resolve(__dirname, "..", "src", "fixtures", "unknown-schema.trace.md");
+  const result = getAvailableActions({
+    reference,
+    maxDepth: 1,
+    sourceAccess: {
+      workspace: {
+        roots: [path.resolve(__dirname, "..", "..", "..", "..", "docs")],
+        symlinkPolicy: "within-workspace"
+      }
+    }
+  });
+
+  assert.equal(result.status, "blocked");
+  assert.equal(result.complete, false);
+  assert.equal(result.actions.some((entry) => entry.actionId === "copy-handoff" && entry.enabled), false);
+  assert.equal(result.actions.some((entry) => entry.actionId === "copy-relevant-slice" && entry.enabled), false);
+  assert.equal(result.actions.some((entry) => entry.actionId === "inspect-schema-contract" && entry.enabled), false);
 });
 
 test("getStructureIndex returns a bounded deduped index with parent and validation summaries", () => {
@@ -442,10 +846,10 @@ test("sourceAccess propagates through structure and node projection surfaces", (
   };
 
   const index = getStructureIndex({ references: [artifactA, artifactB], sourceAccess });
-  assert.ok(index.compatibilityNotes?.includes("Workspace access policy shape is accepted but is not enforced until the local sandbox phase."));
+  assert.ok(index.compatibilityNotes?.includes("Workspace access policy is enforced for direct local artifact reads; broader local traversal hardening remains part of the sandbox phase."));
 
   const tree = getTreeProjection({ references: [artifactA, artifactB], sourceAccess });
-  assert.ok(tree.compatibilityNotes?.includes("Workspace access policy shape is accepted but is not enforced until the local sandbox phase."));
+  assert.ok(tree.compatibilityNotes?.includes("Workspace access policy is enforced for direct local artifact reads; broader local traversal hardening remains part of the sandbox phase."));
 
   const taskNode = tree.nodes.find((node) => node.schemaId === "tiinex.task.v1");
   const topicNode = tree.nodes.find((node) => node.schemaId === "tiinex.topic.v1");

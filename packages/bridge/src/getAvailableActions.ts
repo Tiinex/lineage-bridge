@@ -27,7 +27,7 @@ function deriveAvailableActionsStatus(input: {
 export function getAvailableActions(input: GetAvailableActionsInput): GetAvailableActionsResult {
   const validation = validateArtifact(input);
   const lineage = getLineage(input);
-  const schemaContract = getSchemaContract({ reference: input.reference, maxArtifactBytes: input.maxArtifactBytes });
+  const schemaContract = getSchemaContract({ reference: input.reference, maxArtifactBytes: input.maxArtifactBytes, sourceAccess: input.sourceAccess });
   const hasParent = Boolean(lineage.nodes[0]?.parent?.traceTarget);
   const rawReadable = !validation.rawReadNeededForNextStep;
 
