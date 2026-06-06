@@ -52,6 +52,7 @@ const TOOL_HANDLERS = {
 type CliToolName = keyof typeof TOOL_HANDLERS;
 
 type ParsedCliFlags = {
+  maxArtifactBytes?: number;
   sourceAccess?: SourceAccessOptions;
 };
 
@@ -93,6 +94,10 @@ function parseCliFlags(args: string[]): ParsedCliFlags {
   for (let index = 0; index < args.length; index += 1) {
     const flag = args[index];
     switch (flag) {
+      case "--max-artifact-bytes":
+        parsed.maxArtifactBytes = parseIntegerFlag(readFlagValue(args, index, flag), flag);
+        index += 1;
+        break;
       case "--preferred-github-strategy":
         ensureSourceAccess(parsed).preferredGitHubStrategy = readFlagValue(args, index, flag) as SourceAccessOptions["preferredGitHubStrategy"];
         index += 1;
@@ -163,7 +168,7 @@ function mergeSourceAccess(base: unknown, overrides: SourceAccessOptions | undef
 }
 
 function applyCliFlagsToInput(input: unknown, flags: ParsedCliFlags): unknown {
-  if (!flags.sourceAccess) {
+  if (!flags.sourceAccess && flags.maxArtifactBytes === undefined) {
     return input;
   }
   if (!input || typeof input !== "object" || Array.isArray(input)) {
@@ -171,6 +176,7 @@ function applyCliFlagsToInput(input: unknown, flags: ParsedCliFlags): unknown {
   }
   return {
     ...(input as Record<string, unknown>),
+    ...(flags.maxArtifactBytes === undefined ? {} : { maxArtifactBytes: flags.maxArtifactBytes }),
     sourceAccess: mergeSourceAccess(input, flags.sourceAccess)
   };
 }
@@ -178,9 +184,11 @@ function applyCliFlagsToInput(input: unknown, flags: ParsedCliFlags): unknown {
 function printUsage(): void {
   process.stderr.write("Usage: node apps/cli/dist/index.js <toolName> <jsonInput> [sourceFlags]\n");
   process.stderr.write(`Available tools: ${Object.keys(TOOL_HANDLERS).join(", ")}\n`);
-  process.stderr.write("Source flags: --preferred-github-strategy <auto|remote|local-mirror> --fresh-origin-resolution --workspace-root <path> --allow-outside-roots --symlink-policy <follow|error|within-workspace> --max-fetches <n> --max-schema-fetches <n> --max-redirects <n> --request-timeout-ms <n> --total-timeout-ms <n> --retry-count <n>\n");
+  process.stderr.write("Source flags: --max-artifact-bytes <n> --preferred-github-strategy <auto|remote|local-mirror> --fresh-origin-resolution --workspace-root <path> --allow-outside-roots --symlink-policy <follow|error|within-workspace> --max-fetches <n> --max-schema-fetches <n> --max-redirects <n> --request-timeout-ms <n> --total-timeout-ms <n> --retry-count <n>\n");
+  process.stderr.write("PowerShell note: prefer @input.json over inline JSON to avoid shell-escaping issues.\n");
   process.stderr.write("Smoke examples:\n");
   process.stderr.write("  node apps/cli/dist/index.js resolveArtifact @.cli-smoke.json --workspace-root c:/Users/micro/Documents/Repos/Tiinex/docs --symlink-policy within-workspace\n");
+  process.stderr.write("  node apps/cli/dist/index.js resolveArtifactAsync @.cli-smoke.remote.json --preferred-github-strategy remote --max-artifact-bytes 128\n");
   process.stderr.write("  node apps/cli/dist/index.js getAvailableActionsAsync @.cli-smoke.remote.json --preferred-github-strategy remote --max-fetches 2 --max-schema-fetches 1 --retry-count 1\n");
 }
 
