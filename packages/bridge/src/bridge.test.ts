@@ -657,6 +657,27 @@ test("getLineage blocks parent traversal outside configured workspace roots", ()
   assert.equal(result.originRecoveryCandidates.includes("../outside-root-parent.trace.md"), true);
 });
 
+test("getLineage does not let origin recovery candidates trigger local reads on their own", () => {
+  const sandboxRoot = path.resolve(__dirname, "..", "src", "fixtures", "sandbox");
+  const reference = path.resolve(sandboxRoot, "origin-recovery-only.trace.md");
+  const result = getLineage({
+    reference,
+    sourceAccess: {
+      workspace: {
+        roots: [sandboxRoot],
+        symlinkPolicy: "within-workspace"
+      }
+    }
+  });
+
+  assert.equal(result.status, "incomplete");
+  assert.equal(result.nodes.length, 1);
+  assert.equal(result.stoppedBecause, "missing-parent");
+  assert.equal(result.rawReadNeededForNextStep, false);
+  assert.equal(result.nodes[0]?.parent?.traceTarget, undefined);
+  assert.equal(result.originRecoveryCandidates.includes("../outside-root-parent.trace.md"), true);
+});
+
 test("getLineage does not parse lineage state from truncated raw source", () => {
   const reference = path.resolve(__dirname, "..", "..", "..", "..", "docs", ".topics", "educational", "001.trace.md");
   const result = getLineage({ reference, maxArtifactBytes: 128 });
@@ -945,6 +966,39 @@ test("getSchemaContractAsync resolves a relative schema target against commit-pi
   assert.deepEqual(requests, [
     "https://raw.githubusercontent.com/Tiinex/docs/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/educational/memes/work/remote/001.trace.md",
     "https://raw.githubusercontent.com/Tiinex/docs/291c00f4aaba1e1ba5a0c3479c078070a83c060e/.topics/.schemas/tiinex.task.v1.schema.md"
+  ]);
+});
+
+test("validateArtifactAsync keeps branch artifact relative schema resolution in mutable branch context", async () => {
+  const reference = "https://github.com/Tiinex/docs/blob/main/.topics/educational/memes/work/remote/001.trace.md";
+  const requests: string[] = [];
+  const artifactBody = `# Continuity Context\n- Envelope Schema: [tiinex.root.v1](../../../../.schemas/tiinex.root.v1.schema.md)\n- Current\n  - Current Schema: [tiinex.task.v1](../../../../.schemas/tiinex.task.v1.schema.md)\n  - Created At: 2026-06-06 00:00:00\n---\n# Remote Task\n\n## Objective\n\nBranch schema probe.\n\n## Done Criteria\n\nPreserve mutable branch context.\n\n## Scope\n\nBounded test artifact.\n\n---\n\n# Continuity Integrity\n\n- sha256-base64url-c14n-v1\n  - Towards: [self](self)\n  - Value: branch-schema-probe\n`;
+  const schemaBody = `# Continuity Context\n- Envelope Schema: [tiinex.root.v1](tiinex.root.v1.schema.md)\n- Current\n  - Current Schema: [tiinex.task.v1](tiinex.task.v1.schema.md)\n  - Created At: 2026-06-06 00:00:00\n---\n# Task\n\n## Schema Validation Contract\n\n### Task Rules\nValidation Authority\n\n- Schema Validation Contract\n\nGeneration Authority\n\n- Artifact Creation Contract\n\nIntegrity Authority\n\n- Continuity Integrity\n\nKnown Category Labels\n\n- Rules\n`;
+
+  const result = await validateArtifactAsync({
+    reference,
+    sourceAccess: {
+      preferredGitHubStrategy: "remote",
+      remoteFetcher: async ({ url }: RemoteFetchRequest) => {
+        requests.push(url);
+        return url.endsWith("/.topics/educational/memes/work/remote/001.trace.md")
+          ? { ok: true, status: 200, bodyText: artifactBody }
+          : url.endsWith("/.topics/.schemas/tiinex.task.v1.schema.md")
+            ? { ok: true, status: 200, bodyText: schemaBody }
+            : { ok: false, status: 404, errorCode: "not-found" };
+      }
+    }
+  });
+
+  assert.equal(result.status, "ok");
+  assert.equal(result.source.refKind, "branch");
+  assert.equal(result.source.immutable, false);
+  assert.equal(result.source.mutability, "mutable");
+  assert.equal(result.validationBasis.schemaResolutionComplete, true);
+  assert.ok(result.validationBasis.governingSchemaReference?.includes("https://github.com/Tiinex/docs/blob/main/.topics/.schemas/tiinex.task.v1.schema.md"));
+  assert.deepEqual(requests, [
+    "https://raw.githubusercontent.com/Tiinex/docs/main/.topics/educational/memes/work/remote/001.trace.md",
+    "https://raw.githubusercontent.com/Tiinex/docs/main/.topics/.schemas/tiinex.task.v1.schema.md"
   ]);
 });
 

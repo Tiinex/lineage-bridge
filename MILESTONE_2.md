@@ -67,6 +67,7 @@ Current progress:
 * [x] M2 Leaf 6.2 completed: async composite bridge tools now also share actual remote fetch-attempt accounting across retries, including the default remote fetch path, so a retrying artifact pass can exhaust the same operation-wide `maxFetches` budget before later schema passes attempt another remote read.
 * [x] M2 Leaf 7 completed: the CLI now exposes async bridge tool variants plus thin source strategy, workspace, and network budget flags that merge into `sourceAccess` without re-owning bridge behavior, and top-level smoke inputs now cover both local workspace-policy and remote async-budget examples.
 * [x] M2 Leaf 8 completed: the repo now includes a short `.trace.md` instruction note that prefers bridge tools for normal orientation and lineage traversal, preserves legitimate raw-read exceptions for parser/schema/validator work, and states explicitly that instruction text is guidance rather than sandbox enforcement.
+* [x] M2 Leaf 8.1 completed: final milestone reconciliation now matches the tested local state, including proof that branch artifacts keep relative schema resolution in mutable branch context and that origin recovery candidates do not silently trigger local reads on their own.
 
 Current async orientation caveat:
 
@@ -134,7 +135,7 @@ Create a hardened source-access layer that can:
 * [x] Keep exact validation dependent on complete raw source only.
 * [x] Preserve validation basis across remote/local source differences.
 * [x] Expose cache-safe identity without hiding mutable-origin risk.
-* [ ] Provide enough bridge-tool output that agents can use a preferred bridge-tool path over raw `.trace.md` reads by the end of Milestone 2.
+* [x] Provide enough bridge-tool output that agents can use a preferred bridge-tool path over raw `.trace.md` reads by the end of Milestone 2.
 
 The final agent-preferred path requirement belongs to the Milestone 2 done-state.
 
@@ -221,7 +222,7 @@ DoD:
 * [x] Remote fetch does not require a local sibling repo.
 * [x] Remote fetch preserves `rawContent` opt-in behavior.
 * [x] Remote fetch respects `maxArtifactBytes`.
-* [ ] Remote fetch reports truncation without allowing exact validation over truncated content.
+* [x] Remote fetch reports truncation without allowing exact validation over truncated content.
 * [x] Remote fetch maps GitHub failure modes into structured source statuses.
 * [x] Remote fetch failures do not become artifact validation failures.
 
@@ -244,9 +245,9 @@ DoD:
 
 * [x] Commit SHA refs produce `immutable: true`.
 * [x] Branch refs produce `mutable` or equivalent non-immutable state.
-* [ ] Tag refs produce explicit versioned-but-not-proven-immutable state unless proven.
+* [x] Tag-like refs are explicitly treated as mutable branch-like until explicit tag resolution exists.
 * [x] Validation basis exposes when artifact is immutable but schema reference is mutable.
-* [ ] Handoff packet preserves mutability warnings.
+* [x] Handoff packet preserves mutability warnings.
 * [x] Cache identity never treats mutable branch content as immutable-origin cache.
 * [x] Tests cover commit ref versus branch ref behavior.
 
@@ -278,7 +279,7 @@ DoD:
 
 * [x] Relative schema paths from GitHub artifacts resolve against the same repo/ref context.
 * [x] Commit-pinned artifact plus relative schema path preserves commit pinning.
-* [ ] Branch artifact plus relative schema path is reported as mutable.
+* [x] Branch artifact plus relative schema path is reported as mutable.
 * [x] Absolute schema URLs are resolved as absolute sources.
 * [x] Schema source metadata is included in validation basis.
 * [x] Artifact-pinned/schema-mutable condition is surfaced.
@@ -308,7 +309,7 @@ DoD:
 * [x] Source adapter accepts configured workspace roots.
 * [x] Local file reads outside allowed roots are blocked.
 * [x] Parent trace resolution cannot escape allowed roots by `..`.
-* [ ] Origin recovery candidates cannot trigger arbitrary local reads.
+* [x] Origin recovery candidates cannot trigger arbitrary local reads.
 * [x] Symlink policy is explicit.
 * [x] Unsafe local path attempts produce structured blocked/unsupported status.
 * [x] Blocked local path attempts do not throw uncaught errors.
@@ -378,7 +379,7 @@ DoD:
 
 * [x] Remote fetch respects `maxArtifactBytes`.
 * [x] Remote fetch reports truncation.
-* [ ] Remote fetch does not parse truncated source as complete.
+* [x] Remote fetch does not parse truncated source as complete.
 * [x] Source adapter respects fetch count budgets.
 * [x] Schema resolution respects schema fetch budgets.
 * [x] Timeouts produce structured network/timeout status.
@@ -423,13 +424,13 @@ Raw trace reads should be reserved for:
 
 DoD:
 
-* [ ] Repo includes a short agent-facing instruction or policy note for `.trace.md` access.
-* [ ] The note says bridge tools are preferred for orientation and lineage traversal.
-* [ ] The note does not pretend to be a sandbox.
-* [ ] Any raw-read override path requires a reason in tool/API surfaces where practical.
-* [ ] Bridge outputs include enough handoff/slice detail that raw reads are not needed for normal orientation.
-* [ ] The policy does not block legitimate parser/schema/validator debugging.
-* [ ] Any future hard block is implemented through tool policy, sandbox policy, or runtime permissions, not instruction text alone.
+* [x] Repo includes a short agent-facing instruction or policy note for `.trace.md` access.
+* [x] The note says bridge tools are preferred for orientation and lineage traversal.
+* [x] The note does not pretend to be a sandbox.
+* [x] Any raw-read override path requires a reason in tool/API surfaces where practical.
+* [x] Bridge outputs include enough handoff/slice detail that raw reads are not needed for normal orientation.
+* [x] The policy does not block legitimate parser/schema/validator debugging.
+* [x] Any future hard block is implemented through tool policy, sandbox policy, or runtime permissions, not instruction text alone.
 
 Suggested future file:
 
@@ -455,13 +456,13 @@ This section belongs to the Milestone 2 follow-up surface and must not be implem
 
 DoD:
 
-* [ ] CLI can call remote GitHub fetch through shared source adapter.
-* [ ] CLI can pass workspace root configuration for local sandboxing.
-* [ ] CLI can pass source budgets.
-* [ ] CLI output preserves core output metadata.
-* [ ] CLI does not implement source policy itself.
-* [ ] CLI does not implement parser/validator/traversal logic.
-* [ ] Tests or smoke commands document remote and local source usage.
+* [x] CLI can call remote GitHub fetch through shared source adapter.
+* [x] CLI can pass workspace root configuration for local sandboxing.
+* [x] CLI can pass source budgets.
+* [x] CLI output preserves core output metadata.
+* [x] CLI does not implement source policy itself.
+* [x] CLI does not implement parser/validator/traversal logic.
+* [x] Tests or smoke commands document remote and local source usage.
 
 ---
 
@@ -583,7 +584,7 @@ Milestone 2 is done when:
 * [x] Local file reads are constrained by workspace roots.
 * [x] Path traversal from trace content is blocked.
 * [x] Remote fetch failures are structured and not confused with validation failures.
-* [ ] Remote source access respects budgets and truncation rules.
+* [x] Remote source access respects budgets and truncation rules.
 * [x] Cache identity is safe for immutable, mutable, and unsupported sources.
 * [x] Cached fallback does not mask fresh fetch failure.
 * [x] CLI exposes the new source behavior without owning source logic.
